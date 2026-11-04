@@ -1,0 +1,47 @@
+import type { MetricFormat } from "@/lib/format";
+
+/** How each engine measurement should be displayed. Unknown keys fall back to "number". */
+export const MEASURE_FORMAT: Record<string, MetricFormat | "year" | "hidden"> = {
+  annualSalesUsd: "compactCurrency",
+  totalAssetsUsd: "compactCurrency",
+  amountUsd: "compactCurrency",
+  thresholdUsd: "compactCurrency",
+  netCurrentAssets: "compactCurrency",
+  longTermDebt: "compactCurrency",
+  commonEquity: "compactCurrency",
+  currentRatio: "ratio",
+  debtToEquity: "ratio",
+  debtToNetCurrentAssets: "ratio",
+  inflationFactor: "ratio",
+  peTimesPb: "ratio",
+  pe3y: "multiple",
+  priceToBook: "multiple",
+  priceToTangibleBook: "multiple",
+  yearsWithData: "integer",
+  deficitYears: "integer",
+  consecutiveDividendYears: "integer",
+  yearsCovered: "integer",
+  latestFiscalYear: "year",
+  growth: "percent",
+  price: "currency",
+  averageEps3y: "currency",
+  startAverageEps: "currency",
+  endAverageEps: "currency",
+  latestEps: "currency",
+  baseEps: "currency",
+  bookValuePerShare: "currency",
+  tangibleBookValuePerShare: "currency",
+  ncavPerShare: "currency",
+  twoThirds: "currency",
+  earnings: "currency",
+  growthPercent: "number",
+  multiplier: "number",
+  aaaYieldPercent: "number",
+  baseMultiplier: "hidden",
+  growthMultiplier: "hidden",
+  factor: "hidden",
+  referenceYield: "hidden",
+};
+
+/** USD-denominated measurements regardless of reporting currency. */
+export const USD_MEASURES = new Set(["annualSalesUsd", "totalAssetsUsd", "amountUsd", "thresholdUsd"]);

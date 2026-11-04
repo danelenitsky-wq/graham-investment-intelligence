@@ -1,36 +1,138 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Graham Investment Intelligence
 
-## Getting Started
+A personal investment research platform that analyzes publicly traded stocks with
+Benjamin Graham's methodology from **The Intelligent Investor (4th revised edition, 1973)**,
+with modern extensions kept clearly separate and always labelled.
 
-First, run the development server:
+- Hebrew (RTL) by default, English one click away (`/he/…`, `/en/…`)
+- Dark and light mode, desktop-first, responsive on mobile
+- US stocks first (SEC EDGAR fundamentals + Tiingo prices); data model ready for TASE
+- **No fabricated data.** Missing values are shown as missing. Fictional data only
+  exists as explicitly labelled development fixtures.
+- **No recommendations.** The decision engine is a deliberate stub.
+
+## Stack
+
+Next.js 16 (App Router, Cache Components, Turbopack) · React 19 · TypeScript ·
+Tailwind CSS 4 · shadcn/ui (vendored, Radix) · Recharts 3 · PostgreSQL 16 ·
+Prisma 7 (`@prisma/adapter-pg`) · Zod · Vitest 5
+
+## Quick start
+
+Requirements: Node ≥ 20.19, PostgreSQL 16 (or Docker).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install                      # also runs `prisma generate`
+cp .env.example .env             # then edit SEC_USER_AGENT (and TIINGO_API_KEY)
+docker compose up -d db          # or point DATABASE_URL at your own PostgreSQL
+npm run db:deploy                # apply migrations
+npm run data:sync-universe       # load US tickers/names/CIKs from SEC (~10k rows)
+npm run dev                      # http://localhost:3000 → redirects to /he
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then search a ticker (top bar, or press `/`) and press **Refresh data** on its
+analysis page, or from the command line:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run data:refresh -- AAPL NYSE:KO
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Trying it without API access (fictional data)
 
-## Learn More
+```bash
+# in .env: ENABLE_DEV_FIXTURES="true"
+npm run db:seed:fixtures
+```
 
-To learn more about Next.js, take a look at the following resources:
+This loads two fictional companies (`DEVX:FXTR`, `DEVX:PHTX`) that travel through
+the real normalization → engines → UI pipeline. Every page that shows them carries a
+"Development fixture — not real market data" banner.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Script | What it does |
+| --- | --- |
+| `dev` / `build` / `start` | Next.js |
+| `test` | Vitest unit tests (engines, normalization, parsers, portfolio) |
+| `lint` / `typecheck` | ESLint / TypeScript (`next typegen` first) |
+| `db:migrate` / `db:deploy` / `db:studio` | Prisma |
+| `data:sync-universe` | SEC security master sync |
+| `data:refresh -- TICKER …` | Fetch prices + annual statements for securities |
+| `db:seed:fixtures` | Load fictional dev fixtures (requires `ENABLE_DEV_FIXTURES=true`) |
 
-## Deploy on Vercel
+## Architecture
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/
+  lib/                      pure, framework-free, unit-tested
+    providers/              financial data providers (contracts + adapters)
+      sec-edgar/            security master + XBRL companyfacts (US fundamentals)
+      tiingo/               end-of-day prices, dividends, splits (US)
+      tase/                 Tel Aviv Stock Exchange placeholder (NOT_CONFIGURED)
+      dev-fixture/          fictional fixtures, SEC-shaped
+      registry.ts           provider selection per market; config status (no secrets)
+    normalization/
+      concepts.ts           canonical concepts ← ordered XBRL tag candidates
+      statements.ts         companyfacts → annual periods (restatements, split adjustment)
+      market.ts             price bar validation, ILA→ILS
+    graham/                 Graham rules engine (1973): defensive Ch.14, enterprising Ch.15
+    valuation/
+      graham.ts             Ch.11 formula, Graham number (derived), NCAV, margin of safety
+      modern.ts             MODERN_EXTENSION: CPI-adjusted size, 4.4/Y formula, FCF, ROE…
+    decision/               investment decision engine — stub (NOT_IMPLEMENTED)
+    portfolio/              position valuation (no price → no value, never cost)
+    freshness/              freshness grading + statement validation checks
+    i18n/, format/          dictionaries (he/en), locale-aware formatting
+  server/                   server-only services (Prisma, ingestion, analysis assembly)
+  app/[locale]/…            pages (Server Components, streamed with Suspense)
+  app/actions.ts            Server Actions (refresh, watchlist, portfolio, settings)
+  app/api/search, /health   route handlers
+  components/               ui (shadcn), layout, finance (metrics/badges/states), charts
+prisma/schema.prisma        data model + migrations
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Key rules the code enforces:
+
+- **Tri-state criteria.** Every Graham rule returns `PASS`, `FAIL` or
+  `INSUFFICIENT_DATA`. A rule fails only when the data proves it (for example, one
+  known loss year fails earnings stability even with a short history).
+- **Missing ≠ zero.** Unreported long-term debt is inferred as 0 only when total
+  liabilities equal current liabilities. Prices in another currency than the
+  statements are not mixed.
+- **Provenance.** Every price bar, statement and line item records its `DataSource`,
+  ingestion run (`DataFetch`), original XBRL tag, accession number and filing date.
+  Engine runs are stored as immutable `AnalysisSnapshot`s with their inputs and hash.
+- **Secrets stay on the server.** Keys are read in `src/server/env.ts`
+  (`server-only`), Tiingo's key goes in a header, and URLs are redacted before being
+  stored. The UI only ever sees "configured / not configured".
+
+### Data model (Prisma)
+
+`Exchange`, `Security`, `PriceBar`, `CorporateAction`, `FinancialStatement`,
+`FinancialLineItem`, `DataSource`, `DataFetch`, `DataQualityIssue`,
+`AnalysisSnapshot`, `Portfolio`, `Position`, `PortfolioTransaction`, `Watchlist`,
+`WatchlistItem`, `Alert`, `AppSetting`.
+
+## Methodology notes
+
+| Item | Implementation |
+| --- | --- |
+| Defensive size | Sales ≥ $100M (industrial) / assets ≥ $50M (utility), **nominal 1973 dollars** |
+| Financial condition | CR ≥ 2 and LTD ≤ net current assets; utilities debt ≤ 2× equity |
+| Earnings stability | Positive earnings each of the last 10 fiscal years |
+| Dividend record | 20 uninterrupted years (a year counts as dividend-free only when covered by stored data) |
+| Earnings growth | ≥ +⅓ between 3-yr average EPS at the start and end of a 10-year window |
+| Moderate P/E | Price ≤ 15× 3-year average EPS |
+| Price to assets | P/B ≤ 1.5, or P/E × P/B ≤ 22.5 |
+| Enterprising | CR ≥ 1.5; debt ≤ 110% NCA; no deficit 5 yrs; current dividend; EPS > EPS 5 yrs earlier (configurable); price < 120% net tangible assets |
+| Value formula | V = E × (8.5 + 2G), E = 3-yr avg EPS, G defaults to historical EPS growth and can be overridden |
+| Modern extensions | CPI-scaled size threshold, V = E × (8.5 + 2G) × 4.4 / Y, FCF yield, ROE, coverage. CPI and AAA yield are **entered by you in Settings** with date and source. |
+
+## Status
+
+Implemented: everything above. See "What remains" in the delivery notes, or the
+open items below.
+
+- Not implemented by design: investment recommendations / decision engine.
+- Not yet: alerts evaluation (model exists), TASE provider, IFRS (20-F) filers,
+  quarterly/TTM statements, FX conversion, authentication (single-user app).

@@ -1,26 +1,131 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens (shadcn/ui convention, OKLCH). Light is a warm paper-white
+ * research palette; dark is a graphite terminal palette.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.003 95);
+  --foreground: oklch(0.2 0.015 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.015 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.015 260);
+  --primary: oklch(0.42 0.09 165);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.955 0.005 250);
+  --secondary-foreground: oklch(0.25 0.02 260);
+  --muted: oklch(0.955 0.005 250);
+  --muted-foreground: oklch(0.5 0.015 260);
+  --accent: oklch(0.94 0.012 165);
+  --accent-foreground: oklch(0.3 0.06 165);
+  --destructive: oklch(0.56 0.2 25);
+  --border: oklch(0.905 0.006 250);
+  --input: oklch(0.89 0.006 250);
+  --ring: oklch(0.55 0.09 165);
+  --positive: oklch(0.52 0.13 155);
+  --negative: oklch(0.56 0.19 25);
+  --warning: oklch(0.68 0.14 75);
+  --info: oklch(0.55 0.12 250);
+  --chart-1: oklch(0.5 0.11 165);
+  --chart-2: oklch(0.62 0.14 75);
+  --chart-3: oklch(0.55 0.12 250);
+  --chart-4: oklch(0.6 0.15 320);
+  --chart-5: oklch(0.55 0.02 260);
+  --sidebar: oklch(0.97 0.004 250);
+  --sidebar-foreground: oklch(0.25 0.015 260);
+  --sidebar-accent: oklch(0.93 0.012 165);
+  --sidebar-border: oklch(0.905 0.006 250);
+}
+
+.dark {
+  --background: oklch(0.155 0.012 255);
+  --foreground: oklch(0.93 0.006 250);
+  --card: oklch(0.195 0.014 255);
+  --card-foreground: oklch(0.93 0.006 250);
+  --popover: oklch(0.21 0.014 255);
+  --popover-foreground: oklch(0.93 0.006 250);
+  --primary: oklch(0.74 0.13 165);
+  --primary-foreground: oklch(0.17 0.02 165);
+  --secondary: oklch(0.25 0.014 255);
+  --secondary-foreground: oklch(0.9 0.006 250);
+  --muted: oklch(0.24 0.012 255);
+  --muted-foreground: oklch(0.68 0.012 255);
+  --accent: oklch(0.27 0.03 165);
+  --accent-foreground: oklch(0.88 0.08 165);
+  --destructive: oklch(0.65 0.2 25);
+  --border: oklch(0.29 0.012 255);
+  --input: oklch(0.31 0.012 255);
+  --ring: oklch(0.65 0.12 165);
+  --positive: oklch(0.74 0.15 155);
+  --negative: oklch(0.69 0.18 25);
+  --warning: oklch(0.8 0.14 80);
+  --info: oklch(0.72 0.11 250);
+  --chart-1: oklch(0.74 0.13 165);
+  --chart-2: oklch(0.8 0.13 80);
+  --chart-3: oklch(0.72 0.11 250);
+  --chart-4: oklch(0.72 0.14 320);
+  --chart-5: oklch(0.65 0.02 255);
+  --sidebar: oklch(0.175 0.013 255);
+  --sidebar-foreground: oklch(0.88 0.006 250);
+  --sidebar-accent: oklch(0.26 0.025 165);
+  --sidebar-border: oklch(0.27 0.012 255);
 }
 
 @theme inline {
+  --font-sans: var(--font-heebo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "tnum" 1;
+  }
+  /* Tabular numerals everywhere numbers are compared in columns. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    unicode-bidi: isolate;
+  }
 }
