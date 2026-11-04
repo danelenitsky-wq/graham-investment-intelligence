@@ -12,13 +12,24 @@ export async function getPortfolioSummary() {
   const portfolio = await getDefaultPortfolio();
   const positions = await db.position.findMany({
     where: { portfolioId: portfolio.id },
-    include: { security: { include: { exchange: true, priceBars: { orderBy: { date: "desc" }, take: 1, include: { source: true } } } } },
+    include: {
+      security: {
+        include: {
+          exchange: true,
+          priceBars: { orderBy: { date: "desc" }, take: 1, include: { source: true } },
+          quotes: { orderBy: { sourceTimestamp: "desc" }, take: 1 },
+        },
+      },
+    },
     orderBy: { createdAt: "asc" },
   });
   const summary = valuePortfolio(
     portfolio.baseCurrency,
     positions.map((p) => {
       const bar = p.security.priceBars[0];
+      const quote = p.security.quotes[0];
+      // Prefer the latest stored quote when it is newer than the last daily bar.
+      const useQuote = quote && quote.currency === p.currency && (!bar || quote.sourceTimestamp.toISOString().slice(0, 10) >= bar.date.toISOString().slice(0, 10));
       const sameCurrency = bar && bar.currency === p.currency;
       return {
         id: p.id,
@@ -26,8 +37,8 @@ export async function getPortfolioSummary() {
         quantity: Number(p.quantity),
         averageCost: Number(p.averageCost),
         currency: p.currency,
-        lastPrice: sameCurrency ? Number(bar.close) : null,
-        lastPriceDate: sameCurrency ? bar.date.toISOString().slice(0, 10) : null,
+        lastPrice: useQuote ? Number(quote.price) : sameCurrency ? Number(bar.close) : null,
+        lastPriceDate: useQuote ? quote.sourceTimestamp.toISOString().slice(0, 10) : sameCurrency ? bar.date.toISOString().slice(0, 10) : null,
       };
     }),
   );

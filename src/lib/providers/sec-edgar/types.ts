@@ -50,5 +50,17 @@ export const submissionsSchema = z.object({
   fiscalYearEnd: z.string().nullable().optional(), // "0930"
   tickers: z.array(z.string()).optional(),
   exchanges: z.array(z.string().nullable()).optional(),
+  filings: z
+    .object({
+      recent: z.object({
+        accessionNumber: z.array(z.string()),
+        filingDate: z.array(z.string()),
+        reportDate: z.array(z.string().nullable()).optional(),
+        acceptanceDateTime: z.array(z.string().nullable()).optional(),
+        form: z.array(z.string()),
+        primaryDocument: z.array(z.string().nullable()).optional(),
+      }),
+    })
+    .optional(),
 });
 export type Submissions = z.infer<typeof submissionsSchema>;

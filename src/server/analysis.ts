@@ -15,7 +15,11 @@ import type { AnnualFinancials } from "@/lib/normalization/statements";
 import { valueWithGraham, VALUATION_ENGINE_VERSION, type GrahamValuation, type ValueEstimate } from "@/lib/valuation/graham";
 import { bondYieldAdjustedFormula, inflationAdjustedSize, modernMetrics, type ModernMetrics } from "@/lib/valuation/modern";
 import type { AppSettings } from "@/lib/settings/schema";
+import { evaluateDataSufficiency, type GateResult } from "@/lib/freshness/gate";
+import { filingUrl } from "@/lib/providers/sec-edgar/parse";
+import { providerStatuses } from "@/lib/providers/registry";
 import { db } from "./db";
+import { getQuoteView, type QuoteView } from "./quotes";
 import { getSettings } from "./settings";
 
 export interface SecuritySummary {
@@ -42,14 +46,74 @@ export interface PeriodProvenance {
   isDevFixture: boolean;
   form: string | null;
   accessionNumber: string | null;
+  filingUrl: string | null;
   filedAt: string | null;
+  /** When we retrieved the statement from the provider. */
+  retrievedAt: string | null;
   isRestated: boolean;
   concepts: Partial<Record<CanonicalConcept, string>>; // concept → source taxonomy tag
+  units: Partial<Record<CanonicalConcept, string>>;
+  verification: Partial<Record<CanonicalConcept, string>>; // concept → VerificationStatus
+}
+
+export interface QuarterRow {
+  fiscalYear: number;
+  fiscalPeriod: string;
+  periodEnd: string;
+  currency: string;
+  filedAt: string | null;
+  form: string | null;
+  accessionNumber: string | null;
+  values: Partial<Record<CanonicalConcept, number>>;
+}
+
+export interface ProviderHealth {
+  key: string;
+  name: string;
+  configured: boolean;
+  missingEnv: string[];
+  capabilities: string[];
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastError: string | null;
+  /** Failures since the last success for this security. */
+  consecutiveFailures: number;
+  state: "OK" | "DEGRADED" | "DOWN" | "NOT_CONFIGURED" | "UNUSED";
+}
+
+export interface ConflictRow {
+  dataset: string;
+  metric: string;
+  fiscalYear: number | null;
+  fiscalPeriod: string | null;
+  primarySource: string;
+  primaryValue: number | null;
+  primaryReference: string | null;
+  secondarySource: string;
+  secondaryValue: number | null;
+  relDiff: number | null;
+  checkedAt: string;
+}
+
+export interface DataHealth {
+  gate: GateResult;
+  latestQuoteTimestamp: string | null;
+  latestFiling: { form: string | null; filingDate: string | null; acceptedAt: string | null; accessionNumber: string | null; url: string | null } | null;
+  newerFiling: { form: string; filedAt: string; accessionNumber: string } | null;
+  lastFilingCheckAt: string | null;
+  lastSuccessfulRefreshAt: string | null;
+  conflicts: ConflictRow[];
+  verification: { verified: number; conflict: number; singleSource: number; unverified: number; lastCheckedAt: string | null; source: string | null };
+  providers: ProviderHealth[];
 }
 
 export interface SecurityAnalysis {
   security: SecuritySummary;
-  price: { value: number; date: string; currency: string; sourceKey: string; isDevFixture: boolean } | null;
+  /** Price used by the engines: the latest quote (or stored close), with its freshness status. */
+  price: { value: number; date: string; currency: string; sourceKey: string; isDevFixture: boolean; status: QuoteView["status"]; sourceTimestamp: string | null } | null;
+  quote: QuoteView;
+  health: DataHealth;
+  quarterly: QuarterRow[];
   priceHistory: { date: string; close: number }[];
   dividends: { exDate: string; amount: number; currency: string | null }[];
   annual: AnnualFinancials[];
@@ -82,21 +146,35 @@ export async function findSecurity(exchangeCode: string, ticker: string) {
 }
 
 /** Load stored data for a security and run every engine. Read-only. */
-export async function getSecurityAnalysis(securityId: string, options: { growthPercentOverride?: number | null } = {}): Promise<SecurityAnalysis | null> {
+export async function getSecurityAnalysis(
+  securityId: string,
+  options: { growthPercentOverride?: number | null; quote?: QuoteView } = {},
+): Promise<SecurityAnalysis | null> {
   const security = await db.security.findUnique({ where: { id: securityId }, include: { exchange: true, source: true } });
   if (!security) return null;
   const settings = await getSettings();
+  // Never triggers a provider request by itself: the page fetches the quote explicitly.
+  const quote = options.quote ?? (await getQuoteView(securityId, { noFetch: true }));
 
-  const [statements, bars, actions, fetches, issues] = await Promise.all([
+  const [statements, quarterlyStatements, bars, actions, fetches, issues, openVerifications, lastVerification, sourceFetches] = await Promise.all([
     db.financialStatement.findMany({
       where: { securityId, periodType: "ANNUAL" },
-      include: { lineItems: true, source: true },
+      include: { lineItems: true, source: true, fetch: true },
       orderBy: { periodEnd: "asc" },
+    }),
+    db.financialStatement.findMany({
+      where: { securityId, periodType: "QUARTERLY" },
+      include: { lineItems: true },
+      orderBy: { periodEnd: "desc" },
+      take: 3 * 12,
     }),
     db.priceBar.findMany({ where: { securityId }, orderBy: { date: "asc" }, include: { source: true } }),
     db.corporateAction.findMany({ where: { securityId }, orderBy: { exDate: "asc" } }),
     db.dataFetch.findMany({ where: { securityId }, orderBy: { startedAt: "desc" }, take: 10, include: { source: true } }),
     db.dataQualityIssue.findMany({ where: { securityId, resolvedAt: null }, orderBy: { detectedAt: "desc" } }),
+    db.dataVerification.findMany({ where: { securityId, resolvedAt: null } }),
+    db.dataVerification.findFirst({ where: { securityId, dataset: "financials" }, orderBy: { checkedAt: "desc" } }),
+    db.dataFetch.findMany({ where: { securityId }, orderBy: { startedAt: "desc" }, take: 200, include: { source: true } }),
   ]);
 
   // Merge statement types per fiscal period. Prefer non-fixture sources when both exist.
@@ -118,15 +196,21 @@ export async function getSecurityAnalysis(securityId: string, options: { growthP
           isDevFixture: st.source.isDevFixture,
           form: st.form,
           accessionNumber: st.accessionNumber,
+          filingUrl: st.accessionNumber && security.cik && st.source.key === "sec-edgar" ? filingUrl(security.cik, st.accessionNumber) : null,
           filedAt: st.filedAt ? iso(st.filedAt) : null,
+          retrievedAt: (st.fetch?.completedAt ?? st.updatedAt).toISOString(),
           isRestated: st.isRestated,
           concepts: {},
+          units: {},
+          verification: {},
         },
         fixture: st.source.isDevFixture,
       };
     for (const li of st.lineItems) {
       entry.annual.values[li.concept as CanonicalConcept] = Number(li.value);
       entry.prov.concepts[li.concept as CanonicalConcept] = li.sourceConcept;
+      entry.prov.units[li.concept as CanonicalConcept] = li.unit;
+      entry.prov.verification[li.concept as CanonicalConcept] = li.verificationStatus;
     }
     entry.prov.isRestated ||= st.isRestated;
     byEnd.set(end, entry);
@@ -136,9 +220,19 @@ export async function getSecurityAnalysis(securityId: string, options: { growthP
   const provenance = periods.map((p) => p.prov);
 
   const lastBar = bars[bars.length - 1];
-  const price = lastBar
-    ? { value: Number(lastBar.close), date: iso(lastBar.date), currency: lastBar.currency, sourceKey: lastBar.source.key, isDevFixture: lastBar.source.isDevFixture }
-    : null;
+  const quoteDate = quote.sourceTimestamp ? localDate(quote.sourceTimestamp, quote.timezone) : null;
+  const price =
+    quote.price !== null && quoteDate
+      ? {
+          value: quote.price,
+          date: quoteDate,
+          currency: quote.currency,
+          sourceKey: quote.provider?.key ?? "unknown",
+          isDevFixture: quote.provider?.key === "dev-fixture",
+          status: quote.status,
+          sourceTimestamp: quote.sourceTimestamp,
+        }
+      : null;
 
   const dividendRows = actions.filter((a) => a.type === "CASH_DIVIDEND" && a.amount !== null);
   const dividendYears = [...new Set(dividendRows.map((d) => fiscalYearOf(d.exDate, security.fiscalYearEndMonth)))];
@@ -178,6 +272,81 @@ export async function getSecurityAnalysis(securityId: string, options: { growthP
     usesDevFixtureData: Boolean(price?.isDevFixture) || fundamentalsFixture || security.source?.isDevFixture === true,
   };
 
+  const latestAnnual = annual[annual.length - 1] ?? null;
+  const maxFiledAt = [...statements, ...quarterlyStatements].reduce<string | null>((m, st) => {
+    const f = st.filedAt ? iso(st.filedAt) : null;
+    return f && (!m || f > m) ? f : m;
+  }, null);
+  const latestFilingDate = security.latestFilingDate ? iso(security.latestFilingDate) : null;
+  // A newer original report (amendments excluded: many carry no financial data) than anything stored.
+  const newerFiling =
+    security.latestFilingAccession && latestFilingDate && security.latestFilingForm && !security.latestFilingForm.endsWith("/A") && (!maxFiledAt || latestFilingDate > maxFiledAt)
+      ? { form: security.latestFilingForm, filedAt: latestFilingDate, accessionNumber: security.latestFilingAccession }
+      : null;
+  const conflictRows = openVerifications.filter((v) => v.status === "CONFLICT");
+  const gate = evaluateDataSufficiency({
+    quoteStatus: quote.status,
+    fundamentals: freshness.fundamentals,
+    latestAnnual: latestAnnual?.values ?? null,
+    conflicts: conflictRows.filter((v) => v.dataset === "financials").map((v) => ({ metric: v.metric, fiscalYear: v.fiscalYear, fiscalPeriod: v.fiscalPeriod })),
+    newerFiling,
+    quoteConflict: quote.verification.status === "CONFLICT",
+    usesDevFixtureData: freshness.usesDevFixtureData,
+  });
+  const finVerifications = openVerifications.filter((v) => v.dataset === "financials");
+  const health: DataHealth = {
+    gate,
+    latestQuoteTimestamp: quote.sourceTimestamp,
+    latestFiling: security.latestFilingAccession
+      ? {
+          form: security.latestFilingForm,
+          filingDate: latestFilingDate,
+          acceptedAt: security.latestFilingAcceptedAt?.toISOString() ?? null,
+          accessionNumber: security.latestFilingAccession,
+          url: security.cik ? filingUrl(security.cik, security.latestFilingAccession) : null,
+        }
+      : maxFiledAt
+        ? { form: null, filingDate: maxFiledAt, acceptedAt: null, accessionNumber: null, url: null }
+        : null,
+    newerFiling,
+    lastFilingCheckAt: security.lastFilingCheckAt?.toISOString() ?? null,
+    lastSuccessfulRefreshAt: sourceFetches.find((f) => f.status === "SUCCESS" || f.status === "PARTIAL")?.completedAt?.toISOString() ?? null,
+    conflicts: conflictRows.map((v) => ({
+      dataset: v.dataset,
+      metric: v.metric,
+      fiscalYear: v.fiscalYear,
+      fiscalPeriod: v.fiscalPeriod,
+      primarySource: v.primarySource,
+      primaryValue: v.primaryValue === null ? null : Number(v.primaryValue),
+      primaryReference: v.primaryReference,
+      secondarySource: v.secondarySource,
+      secondaryValue: v.secondaryValue === null ? null : Number(v.secondaryValue),
+      relDiff: v.relDiff,
+      checkedAt: v.checkedAt.toISOString(),
+    })),
+    verification: {
+      verified: finVerifications.filter((v) => v.status === "VERIFIED").length,
+      conflict: finVerifications.filter((v) => v.status === "CONFLICT").length,
+      singleSource: finVerifications.filter((v) => v.status === "SINGLE_SOURCE").length,
+      unverified: finVerifications.filter((v) => v.status === "UNVERIFIED").length,
+      lastCheckedAt: lastVerification?.checkedAt.toISOString() ?? null,
+      source: lastVerification?.secondarySource ?? null,
+    },
+    providers: providerHealth(sourceFetches),
+  };
+
+  const quarterly: QuarterRow[] = [];
+  const qByEnd = new Map<string, QuarterRow>();
+  for (const st of quarterlyStatements) {
+    const end = iso(st.periodEnd);
+    const row = qByEnd.get(end) ?? { fiscalYear: st.fiscalYear, fiscalPeriod: st.fiscalPeriod, periodEnd: end, currency: st.currency, filedAt: st.filedAt ? iso(st.filedAt) : null, form: st.form, accessionNumber: st.accessionNumber, values: {} };
+    for (const li of st.lineItems) row.values[li.concept as CanonicalConcept] = Number(li.value);
+    if (!qByEnd.has(end)) {
+      qByEnd.set(end, row);
+      quarterly.push(row);
+    }
+  }
+
   // Down-sample long histories to weekly closes for charting (keeps the RSC payload small).
   const history = bars.map((b) => ({ date: iso(b.date), close: Number(b.close) }));
   const priceHistory = history.length > 1500 ? history.filter((_, i) => i % 5 === 0 || i === history.length - 1) : history;
@@ -199,6 +368,9 @@ export async function getSecurityAnalysis(securityId: string, options: { growthP
       isDevFixture: security.source?.isDevFixture ?? false,
     },
     price,
+    quote,
+    health,
+    quarterly: quarterly.slice(0, 12),
     priceHistory,
     dividends: dividendRows.slice(-40).map((d) => ({ exDate: iso(d.exDate), amount: Number(d.amount), currency: d.currency })),
     annual,
@@ -222,6 +394,46 @@ export async function getSecurityAnalysis(securityId: string, options: { growthP
   };
 }
 
+function localDate(isoInstant: string, tz: string) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(isoInstant));
+}
+
+function providerHealth(fetches: { status: string; startedAt: Date; completedAt: Date | null; errorMessage: string | null; source: { key: string } }[]): ProviderHealth[] {
+  return providerStatuses()
+    .filter((p) => !p.isDevFixture)
+    .map((p) => {
+      const mine = fetches.filter((f) => f.source.key === p.key);
+      const lastOk = mine.find((f) => f.status === "SUCCESS" || f.status === "PARTIAL");
+      const lastFail = mine.find((f) => f.status === "FAILED");
+      let consecutive = 0;
+      for (const f of mine) {
+        if (f.status === "FAILED") consecutive++;
+        else if (f.status !== "RUNNING") break;
+      }
+      const state: ProviderHealth["state"] = !p.configured
+        ? "NOT_CONFIGURED"
+        : mine.length === 0
+          ? "UNUSED"
+          : consecutive === 0
+            ? "OK"
+            : lastOk
+              ? "DEGRADED"
+              : "DOWN";
+      return {
+        key: p.key,
+        name: p.name,
+        configured: p.configured,
+        missingEnv: p.missingEnv,
+        capabilities: p.capabilities,
+        lastSuccessAt: lastOk?.completedAt?.toISOString() ?? null,
+        lastFailureAt: lastFail?.startedAt.toISOString() ?? null,
+        lastError: lastFail?.errorMessage ?? null,
+        consecutiveFailures: consecutive,
+        state,
+      };
+    });
+}
+
 function hash(v: unknown) {
   return createHash("sha256").update(JSON.stringify(v)).digest("hex");
 }
@@ -229,17 +441,20 @@ function hash(v: unknown) {
 /** Persist immutable snapshots of the current engine outputs, with their inputs. */
 export async function saveAnalysisSnapshots(securityId: string) {
   const a = await getSecurityAnalysis(securityId);
-  if (!a) return;
+  if (!a) return { saved: false as const };
   const asOfDate = new Date((a.price?.date ?? new Date().toISOString().slice(0, 10)) + "T00:00:00Z");
-  const inputs = { annual: a.annual, price: a.price } as unknown as Prisma.InputJsonValue;
+  const inputs = { annual: a.annual, price: a.price ? { value: a.price.value, date: a.price.date, currency: a.price.currency, sourceKey: a.price.sourceKey } : null } as unknown as Prisma.InputJsonValue;
   const inputsHash = hash(inputs);
+  // Calculations are only re-recorded when their underlying data changed.
+  const previous = await db.analysisSnapshot.findFirst({ where: { securityId, engine: "graham-defensive" }, orderBy: { computedAt: "desc" } });
+  if (previous?.inputsHash === inputsHash) return { saved: false as const };
   const common = {
     securityId,
     asOfDate,
     priceUsed: a.price?.value ?? null,
     inputs,
     inputsHash,
-    dataQuality: a.freshness as unknown as Prisma.InputJsonValue,
+    dataQuality: { freshness: a.freshness, gate: a.health.gate, quoteStatus: a.quote.status } as unknown as Prisma.InputJsonValue,
     usesDevFixtureData: a.freshness.usesDevFixtureData,
   };
   await db.analysisSnapshot.createMany({
@@ -250,4 +465,5 @@ export async function saveAnalysisSnapshots(securityId: string) {
       { ...common, engine: "modern-extensions", engineVersion: VALUATION_ENGINE_VERSION, methodology: "MODERN_EXTENSION", results: a.modern as unknown as Prisma.InputJsonValue },
     ],
   });
+  return { saved: true as const };
 }

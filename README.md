@@ -6,7 +6,12 @@ with modern extensions kept clearly separate and always labelled.
 
 - Hebrew (RTL) by default, English one click away (`/he/…`, `/en/…`)
 - Dark and light mode, desktop-first, responsive on mobile
-- US stocks first (SEC EDGAR fundamentals + Tiingo prices); data model ready for TASE
+- US stocks first: SEC EDGAR filings (source of record), FMP latest quotes + verification,
+  Tiingo daily history / IEX fallback; data model ready for TASE
+- **Data freshness engine**: Live / Delayed / Last close / Cached / Stale / Unavailable,
+  exchange calendars and timezones, 60 s refresh, Refresh Now, daily new-filing check,
+  cross-source verification, and an INSUFFICIENT VERIFIED DATA gate.
+  See [docs/DATA_PROVIDERS.md](docs/DATA_PROVIDERS.md) for the provider evaluation and setup.
 - **No fabricated data.** Missing values are shown as missing. Fictional data only
   exists as explicitly labelled development fixtures.
 - **No recommendations.** The decision engine is a deliberate stub.
@@ -23,7 +28,7 @@ Requirements: Node ≥ 20.19, PostgreSQL 16 (or Docker).
 
 ```bash
 npm install                      # also runs `prisma generate`
-cp .env.example .env             # then edit SEC_USER_AGENT (and TIINGO_API_KEY)
+cp .env.example .env             # then edit SEC_USER_AGENT, TIINGO_API_KEY, FMP_API_KEY/FMP_PLAN
 docker compose up -d db          # or point DATABASE_URL at your own PostgreSQL
 npm run db:deploy                # apply migrations
 npm run data:sync-universe       # load US tickers/names/CIKs from SEC (~10k rows)
@@ -57,7 +62,10 @@ the real normalization → engines → UI pipeline. Every page that shows them c
 | `lint` / `typecheck` | ESLint / TypeScript (`next typegen` first) |
 | `db:migrate` / `db:deploy` / `db:studio` | Prisma |
 | `data:sync-universe` | SEC security master sync |
-| `data:refresh -- TICKER …` | Fetch prices + annual statements for securities |
+| `data:refresh -- TICKER …` | Fetch prices + annual/quarterly statements, verify against FMP |
+| `data:check-filings [-- --force]` | Daily check for new 10-K/10-Q filings; refreshes only what changed |
+| `acceptance:quote -- TICKER [--url URL]` | Live quote acceptance test (stops at the configuration checkpoint without keys) |
+| `test:integration` | Database-backed tests (quote service, filings check, verification) with scripted providers |
 | `db:seed:fixtures` | Load fictional dev fixtures (requires `ENABLE_DEV_FIXTURES=true`) |
 
 ## Architecture
@@ -66,8 +74,9 @@ the real normalization → engines → UI pipeline. Every page that shows them c
 src/
   lib/                      pure, framework-free, unit-tested
     providers/              financial data providers (contracts + adapters)
-      sec-edgar/            security master + XBRL companyfacts (US fundamentals)
-      tiingo/               end-of-day prices, dividends, splits (US)
+      sec-edgar/            security master, XBRL companyfacts (annual + quarterly), submissions (new filings)
+      fmp/                  latest quotes, statements for verification, EOD fallback
+      tiingo/               end-of-day prices, dividends, splits, IEX quotes (US)
       tase/                 Tel Aviv Stock Exchange placeholder (NOT_CONFIGURED)
       dev-fixture/          fictional fixtures, SEC-shaped
       registry.ts           provider selection per market; config status (no secrets)
@@ -81,7 +90,9 @@ src/
       modern.ts             MODERN_EXTENSION: CPI-adjusted size, 4.4/Y formula, FCF, ROE…
     decision/               investment decision engine — stub (NOT_IMPLEMENTED)
     portfolio/              position valuation (no price → no value, never cost)
-    freshness/              freshness grading + statement validation checks
+    freshness/              freshness grading, quote status + cache policy (quote.ts), sufficiency gate (gate.ts)
+    market/                 exchange calendars (NYSE holidays, early closes), session state, timezones
+    verification/           cross-source comparison of statements and quotes
     i18n/, format/          dictionaries (he/en), locale-aware formatting
   server/                   server-only services (Prisma, ingestion, analysis assembly)
   app/[locale]/…            pages (Server Components, streamed with Suspense)
@@ -134,5 +145,7 @@ Implemented: everything above. See "What remains" in the delivery notes, or the
 open items below.
 
 - Not implemented by design: investment recommendations / decision engine.
-- Not yet: alerts evaluation (model exists), TASE provider, IFRS (20-F) filers,
-  quarterly/TTM statements, FX conversion, authentication (single-user app).
+- Not yet: alerts evaluation (model exists), TASE provider and calendar, IFRS (20-F) filers,
+  TTM statements, FX conversion, authentication (single-user app).
+- Live provider retrieval has not been exercised from the build environment (no credentials,
+  provider hosts blocked); see the configuration checkpoint in docs/DATA_PROVIDERS.md.

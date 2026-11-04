@@ -3,6 +3,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { DevFixtureBadge, FreshnessBadge } from "@/components/finance/badges";
 import { EmptyState } from "@/components/finance/states";
+import { DataHealthPanel, QuarterlyTable, VerificationCell } from "@/components/analysis/data-health-panel";
+import { summarizeVerification, type VerificationStatus } from "@/lib/verification";
 import { formatDate } from "@/lib/format";
 import { fmt, lookup, type Dictionary, type Locale } from "@/lib/i18n";
 import type { SecurityAnalysis } from "@/server/analysis";
@@ -12,6 +14,7 @@ export function DataPanel({ a, dict, locale }: { a: SecurityAnalysis; dict: Dict
   const issueText = (code: string) => lookup(dict.dataHealth.issueCodes as Record<string, string>, code);
   return (
     <div className="flex flex-col gap-5">
+      <DataHealthPanel a={a} dict={dict} locale={locale} />
       <div className="grid gap-3 sm:grid-cols-2">
         {([
           ["prices", dict.stock.price],
@@ -49,6 +52,8 @@ export function DataPanel({ a, dict, locale }: { a: SecurityAnalysis; dict: Dict
                   <TableHead>{dict.common.form}</TableHead>
                   <TableHead>{dict.common.accession}</TableHead>
                   <TableHead>{dict.common.filed}</TableHead>
+                  <TableHead>{dict.health.retrieved}</TableHead>
+                  <TableHead>{dict.health.verificationCol}</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -61,9 +66,22 @@ export function DataPanel({ a, dict, locale }: { a: SecurityAnalysis; dict: Dict
                     </TableCell>
                     <TableCell className="font-mono text-xs">{p.form ?? "—"}</TableCell>
                     <TableCell className="font-mono text-xs" dir="ltr">
-                      {p.accessionNumber ?? "—"}
+                      {p.filingUrl ? (
+                        <a href={p.filingUrl} target="_blank" rel="noreferrer" className="hover:underline">
+                          {p.accessionNumber}
+                        </a>
+                      ) : (
+                        (p.accessionNumber ?? "—")
+                      )}
                     </TableCell>
                     <TableCell className="text-xs">{formatDate(locale, p.filedAt)}</TableCell>
+                    <TableCell className="text-xs">{formatDate(locale, p.retrievedAt, { dateStyle: "short", timeStyle: "short", timeZone: a.quote.timezone })}</TableCell>
+                    <TableCell>
+                      <VerificationCell
+                        status={summarizeVerification(Object.values(p.verification).map((x) => ({ status: x as VerificationStatus })).filter((x) => x.status !== "UNVERIFIED"))}
+                        dict={dict}
+                      />
+                    </TableCell>
                     <TableCell>{p.isRestated && <Badge variant="warning">{dict.financials.restated}</Badge>}</TableCell>
                   </TableRow>
                 ))}
@@ -72,6 +90,8 @@ export function DataPanel({ a, dict, locale }: { a: SecurityAnalysis; dict: Dict
           )}
         </CardContent>
       </Card>
+
+      <QuarterlyTable a={a} dict={dict} locale={locale} />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
