@@ -1,4 +1,7 @@
-import { Lock } from "lucide-react";
+import Link from "next/link";
+import { Scale } from "lucide-react";
+import { renderStatement } from "@/lib/decision";
+import { CategoryBadge } from "./decision-panel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/finance/metric-card";
 import { ScreenStrip, ScreenSummary } from "@/components/finance/rule-list";
@@ -76,13 +79,24 @@ export function SummaryPanel({ a, dict, locale, gated = false }: { a: SecurityAn
         })}
       </div>
 
-      <Card className="border-dashed">
+      <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-muted-foreground">
-            <Lock className="size-4" /> {dict.stock.decisionPending}
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            <Scale className="size-4" /> {dict.decision.title}
+            <CategoryBadge category={a.decision.category} dict={dict} />
+            <span className="text-xs font-normal text-muted-foreground">
+              {dict.decision.strategies[a.decision.strategy]}
+              {a.decision.confidence ? ` · ${dict.decision.confidence[a.decision.confidence]}` : ""}
+            </span>
           </CardTitle>
-          <CardDescription>{dict.stock.decisionPendingBody}</CardDescription>
+          <CardDescription>{a.decision.reasons[0] ? renderStatement(a.decision.reasons[0], dict, locale, a.decision.keyFigures.currency) : dict.decision.categoryHelp[a.decision.category]}</CardDescription>
         </CardHeader>
+        <CardContent className="flex flex-col gap-2 text-xs text-muted-foreground">
+          <span>{dict.decision.disclaimer}</span>
+          <Link href="?tab=decision" className="w-fit text-sm text-foreground underline underline-offset-2">
+            {dict.stock.tabs.decision}
+          </Link>
+        </CardContent>
       </Card>
     </div>
   );

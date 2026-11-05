@@ -438,6 +438,9 @@ model Position {
   currency    String
   openedAt    DateTime?
   notes       String?
+  // Graham strategy recorded as the reason the position was bought (DEFENSIVE |
+  // ENTERPRISING | NET_NET). The decision engine checks the thesis against it.
+  thesisStrategy String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

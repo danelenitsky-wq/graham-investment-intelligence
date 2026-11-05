@@ -1,3 +1,4 @@
+import { decisionHe } from "./decision-he";
 import { valuationHe } from "./valuation-he";
 import { grahamHe } from "./graham-he";
 import type { Dictionary } from "./en";
@@ -117,7 +118,7 @@ export const he: Dictionary = {
   stock: {
     searchTitle: "ניתוח מניה",
     searchSubtitle: "חיפוש נייר ערך אמריקאי לפי סימול, שם חברה או בורסה",
-    tabs: { summary: "תקציר", graham: "קריטריוני גרהם", valuation: "הערכת שווי", financials: "דוחות כספיים", data: "נתונים ומקורות" },
+    tabs: { summary: "תקציר", decision: "החלטה ודוח", graham: "קריטריוני גרהם", valuation: "הערכת שווי", financials: "דוחות כספיים", data: "נתונים ומקורות" },
     price: "שער סגירה אחרון",
     priceChart: "היסטוריית מחיר",
     noPrice: "אין נתוני מחיר שמורים",
@@ -131,8 +132,6 @@ export const he: Dictionary = {
     defensiveScreen: "המשקיע הדפנסיבי (פרק 14)",
     enterprisingScreen: "המשקיע היוזם (פרק 15)",
     criteriaPassed: "{passed} מתוך {total} קריטריונים התקיימו",
-    decisionPending: "מנוע החלטות השקעה",
-    decisionPendingBody: "לא מומש. לא מופקת המלצת קנייה, מכירה או החזקה.",
     exchange: "בורסה",
     cik: "מספר CIK ב־SEC",
     sector: "סקטור",
@@ -533,4 +532,5 @@ export const he: Dictionary = {
   },
   graham: grahamHe,
   valuationDashboard: valuationHe,
+  decision: decisionHe,
 };

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useI18n } from "@/components/layout/providers";
+import { STRATEGIES } from "@/lib/decision/types";
 import { addPositionAction, removePositionAction, type ActionResult } from "@/app/actions";
 
 export function PositionForm({ exchanges }: { exchanges: string[] }) {
@@ -32,6 +33,17 @@ export function PositionForm({ exchanges }: { exchanges: string[] }) {
       <label className="flex flex-col gap-1 text-xs">
         <span className="text-muted-foreground">{dict.portfolio.averageCost}</span>
         <Input name="averageCost" type="number" step="any" min="0" required className="w-32" dir="ltr" />
+      </label>
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="text-muted-foreground">{dict.decision.settings.thesisStrategy}</span>
+        <NativeSelect name="thesisStrategy" defaultValue="">
+          <option value="">{dict.decision.settings.thesisNone}</option>
+          {STRATEGIES.map((s) => (
+            <option key={s} value={s}>
+              {dict.decision.strategies[s]}
+            </option>
+          ))}
+        </NativeSelect>
       </label>
       <Button type="submit" disabled={pending}>
         {pending ? <Loader2 className="animate-spin" /> : <Plus />} {dict.portfolio.addPosition}

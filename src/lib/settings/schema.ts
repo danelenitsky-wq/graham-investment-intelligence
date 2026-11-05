@@ -3,6 +3,7 @@ import { DEFAULT_FRESHNESS } from "@/lib/freshness";
 import { ENTERPRISING_THRESHOLDS } from "@/lib/graham/rules";
 import { DEFAULT_MARGIN_OF_SAFETY_TARGET } from "@/lib/valuation/engine";
 import { INTRINSIC_DEFAULTS, INTRINSIC_LIMITS } from "@/lib/valuation/intrinsic";
+import { DEFAULT_DECISION_SETTINGS } from "@/lib/decision/types";
 
 /** A macro input the user typed in, with its provenance. */
 export const manualValueSchema = z.object({
@@ -48,6 +49,19 @@ export const settingsSchema = z.object({
       terminalGrowth: INTRINSIC_DEFAULTS.terminalGrowth,
       normalizationYears: INTRINSIC_DEFAULTS.normalizationYears,
     }),
+  /**
+   * Decision-engine assumptions. APPLICATION ASSUMPTIONS, not Graham rules:
+   * the default strategy, the concentration limit and the "excessive
+   * valuation" multiple that trigger a review of an owned position.
+   */
+  decision: z
+    .object({
+      strategy: z.enum(["DEFENSIVE", "ENTERPRISING", "NET_NET"]),
+      maxPositionWeight: z.number().min(0.01).max(1),
+      excessiveValuationMultiple: z.number().min(1).max(10),
+      requireIntrinsicMarginOfSafety: z.boolean(),
+    })
+    .default(DEFAULT_DECISION_SETTINGS),
 });
 export type AppSettings = z.infer<typeof settingsSchema>;
 export const SETTINGS_KEY = "app";

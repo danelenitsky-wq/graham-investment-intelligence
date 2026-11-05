@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fundamentalsFreshness, priceFreshness, validateAnnualFinancials } from "@/lib/freshness";
 import { valuePortfolio } from "@/lib/portfolio";
-import { evaluateDecision } from "@/lib/decision";
 import { year } from "./helpers";
 
 describe("freshness", () => {
@@ -44,11 +43,5 @@ describe("portfolio", () => {
     expect(s.foreignCurrencyPositions).toBe(1);
     expect(s.positions.find((p) => p.id === "a")!.weight).toBe(1);
     expect(s.positions.find((p) => p.id === "b")!.marketValue).toBeNull();
-  });
-});
-
-describe("decision engine", () => {
-  it("is intentionally not implemented", () => {
-    expect(evaluateDecision({} as never)).toEqual({ status: "NOT_IMPLEMENTED" });
   });
 });

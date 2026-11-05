@@ -8,6 +8,8 @@ import { useI18n } from "@/components/layout/providers";
 import { saveSettingsAction, type ActionResult } from "@/app/actions";
 import type { AppSettings } from "@/lib/settings/schema";
 import { MethodologyBadge } from "./badges";
+import { NativeSelect } from "@/components/ui/native-select";
+import { STRATEGIES } from "@/lib/decision/types";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -103,6 +105,33 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
           <label className="col-span-2 flex items-center gap-2 text-sm md:col-span-4">
             <input type="checkbox" name="intrinsicEnabled" defaultChecked={settings.valuation.intrinsicEnabled} className="size-4 accent-primary" />
             {dict.settings.intrinsicEnabled}
+          </label>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{dict.decision.settings.title}</CardTitle>
+          <CardDescription>{dict.decision.settings.note}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Field label={dict.decision.settings.strategy}>
+            <NativeSelect name="decisionStrategy" defaultValue={settings.decision.strategy}>
+              {STRATEGIES.map((s) => (
+                <option key={s} value={s}>
+                  {dict.decision.strategies[s]}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label={dict.decision.settings.maxPositionWeight}>
+            <Input name="maxPositionWeight" type="number" min="1" max="100" step="1" required defaultValue={Math.round(settings.decision.maxPositionWeight * 100)} dir="ltr" />
+          </Field>
+          <Field label={dict.decision.settings.excessiveValuationMultiple}>
+            <Input name="excessiveValuationMultiple" type="number" min="1" max="10" step="0.1" required defaultValue={settings.decision.excessiveValuationMultiple} dir="ltr" />
+          </Field>
+          <label className="col-span-2 flex items-center gap-2 text-sm md:col-span-4">
+            <input type="checkbox" name="requireIntrinsicMarginOfSafety" defaultChecked={settings.decision.requireIntrinsicMarginOfSafety} className="size-4 accent-primary" />
+            {dict.decision.settings.requireIntrinsicMarginOfSafety}
           </label>
         </CardContent>
       </Card>

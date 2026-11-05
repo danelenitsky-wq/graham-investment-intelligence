@@ -2,7 +2,7 @@ import "server-only";
 import { fundamentalsStatus, type DataStatus, type FundamentalsReason } from "@/lib/freshness/status";
 import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
-import { evaluateDecision, type DecisionResult } from "@/lib/decision";
+import { evaluateDecision, type DecisionResult, type DecisionSettings, type PositionContext, type Strategy } from "@/lib/decision";
 import {
   fundamentalsFreshness,
   priceFreshness,
@@ -26,6 +26,8 @@ import { providerStatuses } from "@/lib/providers/registry";
 import { db } from "./db";
 import { getQuoteView, type QuoteView } from "./quotes";
 import { getSettings } from "./settings";
+import { getPortfolioSummary } from "./portfolio";
+import { persistDecisionSnapshot } from "./decision";
 
 export interface SecuritySummary {
   id: string;
@@ -125,6 +127,8 @@ export interface SecurityAnalysis {
   health: DataHealth;
   quarterly: QuarterRow[];
   priceHistory: { date: string; close: number }[];
+  /** Provider of the stored daily price history. */
+  priceHistorySource: string | null;
   dividends: { exDate: string; amount: number; currency: string | null }[];
   annual: AnnualFinancials[];
   provenance: PeriodProvenance[];
@@ -139,10 +143,13 @@ export interface SecurityAnalysis {
   /** Optional conservative intrinsic value (MODERN EXTENSION) with its base data and default assumptions. */
   intrinsic: { base: IntrinsicBase; defaults: AssumptionDefaults; result: IntrinsicResult };
   freshness: FreshnessReport;
+  /** Application-defined research classification (deterministic; see src/lib/decision). */
   decision: DecisionResult;
+  /** The position held in the portfolio, when the stock is owned. */
+  position: PositionContext | null;
   fetches: { dataset: string; status: string; sourceKey: string; startedAt: string; completedAt: string | null; errorMessage: string | null }[];
   issues: { severity: string; code: string; message: string; detectedAt: string }[];
-  settings: Pick<AppSettings, "aaaBondYield" | "currentCpi" | "valuation">;
+  settings: Pick<AppSettings, "aaaBondYield" | "currentCpi" | "valuation" | "decision" | "freshness">;
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -164,7 +171,7 @@ export async function findSecurity(exchangeCode: string, ticker: string) {
 /** Load stored data for a security and run every engine. Read-only. */
 export async function getSecurityAnalysis(
   securityId: string,
-  options: { growthPercentOverride?: number | null; quote?: QuoteView } = {},
+  options: { growthPercentOverride?: number | null; quote?: QuoteView; strategy?: Strategy | null } = {},
 ): Promise<SecurityAnalysis | null> {
   const security = await db.security.findUnique({ where: { id: securityId }, include: { exchange: true, source: true } });
   if (!security) return null;
@@ -394,6 +401,22 @@ export async function getSecurityAnalysis(
     providers: providerHealth(sourceFetches),
   };
 
+  const position = await loadPosition(securityId);
+  const decisionSettings: DecisionSettings = settings.decision;
+  const decision = evaluateDecision({
+    strategy: options.strategy ?? decisionSettings.strategy,
+    graham,
+    dashboard: valuationDashboard,
+    intrinsic: intrinsic.result,
+    marginOfSafetyTarget: settings.valuation.marginOfSafetyTarget,
+    gate,
+    freshness,
+    verification: health.verification.lastCheckedAt ? health.verification : null,
+    position,
+    settings: decisionSettings,
+    fundamentalsStaleMonths: settings.freshness.fundamentalsStaleMonths,
+  });
+
   const quarterly: QuarterRow[] = [];
   const qByEnd = new Map<string, QuarterRow>();
   for (const st of quarterlyStatements) {
@@ -434,6 +457,7 @@ export async function getSecurityAnalysis(
     health,
     quarterly: quarterly.slice(0, 12),
     priceHistory,
+    priceHistorySource: priceSourceName ?? null,
     dividends: dividendRows
       .filter((d) => !graham.excludedDistributions.some((x) => x.exDate === iso(d.exDate)))
       .slice(-40)
@@ -448,7 +472,8 @@ export async function getSecurityAnalysis(
     valuationDashboard,
     intrinsic,
     freshness,
-    decision: evaluateDecision({ defensive, enterprising, valuation, freshness }),
+    decision,
+    position,
     fetches: fetches.map((f) => ({
       dataset: f.dataset,
       status: f.status,
@@ -458,7 +483,25 @@ export async function getSecurityAnalysis(
       errorMessage: f.errorMessage,
     })),
     issues: issues.map((i) => ({ severity: i.severity, code: i.code, message: i.message, detectedAt: i.detectedAt.toISOString() })),
-    settings: { aaaBondYield: settings.aaaBondYield, currentCpi: settings.currentCpi, valuation: settings.valuation },
+    settings: { aaaBondYield: settings.aaaBondYield, currentCpi: settings.currentCpi, valuation: settings.valuation, decision: settings.decision, freshness: settings.freshness },
+  };
+}
+
+/** The position in the default portfolio, with its market-value weight (null when not owned). */
+async function loadPosition(securityId: string): Promise<PositionContext | null> {
+  const row = await db.position.findFirst({ where: { securityId }, orderBy: { createdAt: "asc" } });
+  if (!row) return null;
+  const { summary } = await getPortfolioSummary();
+  const valued = summary.positions.find((p) => p.id === row.id);
+  const thesis = row.thesisStrategy;
+  return {
+    quantity: Number(row.quantity),
+    averageCost: Number(row.averageCost),
+    currency: row.currency,
+    weight: valued?.weight ?? null,
+    marketValue: valued?.marketValue ?? null,
+    thesisStrategy: thesis === "DEFENSIVE" || thesis === "ENTERPRISING" || thesis === "NET_NET" ? thesis : null,
+    openedAt: row.openedAt ? iso(row.openedAt) : null,
   };
 }
 
@@ -510,6 +553,8 @@ function hash(v: unknown) {
 export async function saveAnalysisSnapshots(securityId: string) {
   const a = await getSecurityAnalysis(securityId);
   if (!a) return { saved: false as const };
+  // The decision snapshot keeps its own history (deduplicated by its own inputs hash).
+  await persistDecisionSnapshot(a, "REFRESH");
   const asOfDate = new Date((a.price?.date ?? new Date().toISOString().slice(0, 10)) + "T00:00:00Z");
   const inputs = { annual: a.annual, price: a.price ? { value: a.price.value, date: a.price.date, currency: a.price.currency, sourceKey: a.price.sourceKey } : null } as unknown as Prisma.InputJsonValue;
   const inputsHash = hash(inputs);
