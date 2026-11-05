@@ -1,6 +1,7 @@
 /** Pure parser for Tiingo end-of-day prices (https://www.tiingo.com/documentation/end-of-day). */
 import { z } from "zod";
 import type { NormalizedQuote } from "../types";
+import { sessionCloseTime, US_EQUITY_CALENDAR, zonedTimeToUtc } from "@/lib/market/calendar";
 import { makeBar, toIsoDate, validatePriceBars, type NormalizedDividend, type NormalizedPriceBar, type NormalizedSplit } from "@/lib/normalization/market";
 
 export const tiingoRowSchema = z.object({
@@ -78,5 +79,45 @@ export function parseTiingoIex(rows: z.infer<typeof tiingoIexSchema>): Normalize
     feed: "REALTIME",
     delayMinutes: null,
     feedNote: "IEX_ONLY",
+  };
+}
+
+/**
+ * Fallback when the IEX endpoint carries no last sale (`last` and
+ * `lastSaleTimestamp` are null — the common case on plans without IEX trade
+ * entitlement). Uses Tiingo's official end-of-day close of the latest session,
+ * timestamped at that session's close in New York, and labelled EOD so it can
+ * only ever be shown as "Last close" (or stale), never as live or delayed.
+ * `rows` are daily bars in any order; the previous bar supplies the change.
+ */
+export function parseTiingoEodQuote(ticker: string, rows: z.infer<typeof tiingoResponseSchema>): NormalizedQuote | null {
+  const bars = rows
+    .map((r) => ({ r, date: toIsoDate(r.date) }))
+    .filter((x): x is { r: (typeof rows)[number]; date: string } => x.date !== null && x.r.close > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const last = bars.at(-1);
+  if (!last) return null;
+  const prev = bars.length > 1 ? bars[bars.length - 2].r.close : null;
+  const close = last.r.close;
+  const sourceTimestamp = zonedTimeToUtc(last.date, sessionCloseTime(US_EQUITY_CALENDAR, last.date), US_EQUITY_CALENDAR.timezone);
+  return {
+    symbol: ticker.toUpperCase(),
+    price: close,
+    previousClose: prev,
+    change: prev ? close - prev : null,
+    changePercent: prev ? close / prev - 1 : null,
+    open: last.r.open ?? null,
+    dayHigh: last.r.high ?? null,
+    dayLow: last.r.low ?? null,
+    volume: last.r.volume ?? null,
+    marketCap: null,
+    yearHigh: null,
+    yearLow: null,
+    currency: "USD",
+    exchange: null,
+    sourceTimestamp: sourceTimestamp.toISOString(),
+    feed: "EOD",
+    delayMinutes: null,
+    feedNote: "TIINGO_EOD_CLOSE",
   };
 }

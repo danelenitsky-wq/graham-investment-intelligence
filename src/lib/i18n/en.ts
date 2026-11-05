@@ -437,7 +437,7 @@ export const en = {
     retrievedAt: "Retrieved",
     provider: "Provider",
     feeds: { REALTIME: "Real-time feed", DELAYED: "Delayed feed", EOD: "End-of-day data", UNKNOWN: "Feed not confirmed real-time" },
-    feedNotes: { IEX_ONLY: "IEX venue only" },
+    feedNotes: { IEX_ONLY: "IEX venue only", TIINGO_EOD_CLOSE: "Tiingo official close" },
     session: { OPEN: "Market open", CLOSED: "Market closed", UNKNOWN: "Trading calendar not modelled" },
     closedReasons: { WEEKEND: "weekend", HOLIDAY: "holiday", BEFORE_OPEN: "pre-market", AFTER_CLOSE: "after close" },
     earlyClose: "early close",

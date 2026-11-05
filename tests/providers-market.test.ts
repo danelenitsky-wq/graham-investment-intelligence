@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { httpGet, bodySnippet } from "@/lib/providers/http";
 import { ProviderError } from "@/lib/providers/types";
 import { fmpQuoteSchema, mergeFmpStatements, parseFmpDividends, parseFmpQuote, parseFmpSplits } from "@/lib/providers/fmp/parse";
-import { parseTiingoIex } from "@/lib/providers/tiingo/parse";
+import { parseTiingoEodQuote, parseTiingoIex } from "@/lib/providers/tiingo/parse";
 import { filingUrl, parsePeriodicFilings } from "@/lib/providers/sec-edgar/parse";
 import { normalizeQuarterlyFacts } from "@/lib/normalization/statements";
 import type { CompanyFacts } from "@/lib/providers/sec-edgar/types";
@@ -54,6 +54,18 @@ describe("Tiingo IEX parser", () => {
     expect(q).toMatchObject({ price: 50.5, feed: "REALTIME", feedNote: "IEX_ONLY", sourceTimestamp: "2026-11-04T20:00:01.123Z" });
     expect(q.changePercent).toBeCloseTo(0.01);
     expect(parseTiingoIex([{ ticker: "test", last: null, tngoLast: 51, lastSaleTimestamp: null }])).toBeNull();
+  });
+
+  it("falls back to the latest official close, labelled EOD and stamped at the NY session close", () => {
+    const q = parseTiingoEodQuote("aapl", [
+      { date: "2026-11-04T00:00:00+00:00", close: 349.51, open: 341.565, high: 354.5, low: 340.99, volume: 89637749 },
+      { date: "2026-11-03T00:00:00+00:00", close: 340 },
+    ])!;
+    expect(q).toMatchObject({ symbol: "AAPL", price: 349.51, previousClose: 340, feed: "EOD", feedNote: "TIINGO_EOD_CLOSE", sourceTimestamp: "2026-11-04T21:00:00.000Z" });
+    expect(q.change).toBeCloseTo(9.51);
+    // Early close (day after Thanksgiving 2026 closes at 13:00 ET).
+    expect(parseTiingoEodQuote("x", [{ date: "2026-11-27", close: 10 }])!.sourceTimestamp).toBe("2026-11-27T18:00:00.000Z");
+    expect(parseTiingoEodQuote("x", [])).toBeNull();
   });
 });
 

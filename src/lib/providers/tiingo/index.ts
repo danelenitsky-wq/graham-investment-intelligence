@@ -2,7 +2,7 @@ import "server-only";
 import { env } from "@/server/env";
 import { httpGet, parseJson } from "../http";
 import { ProviderError, type PriceProvider, type ProviderDescriptor, type QuoteProvider } from "../types";
-import { parseTiingoIex, parseTiingoPrices, tiingoIexSchema, tiingoResponseSchema } from "./parse";
+import { parseTiingoEodQuote, parseTiingoIex, parseTiingoPrices, tiingoIexSchema, tiingoResponseSchema } from "./parse";
 
 export const TIINGO: ProviderDescriptor = {
   key: "tiingo",
@@ -57,7 +57,17 @@ export const tiingoQuotes: QuoteProvider = {
     const parsed = tiingoIexSchema.safeParse(parseJson(TIINGO.key, res.text, res.endpoint));
     if (!parsed.success) throw new ProviderError(TIINGO.key, "PARSE_ERROR", "Unexpected IEX response", res.status, res.endpoint);
     const quote = parseTiingoIex(parsed.data);
-    if (!quote) throw new ProviderError(TIINGO.key, "NOT_FOUND", `No IEX last sale for ${security.ticker}`, res.status, res.endpoint);
-    return { quote, meta: { endpoint: res.endpoint, httpStatus: res.status, payloadHash: res.payloadHash, fetchedAt: new Date().toISOString() } };
+    if (quote) return { quote, meta: { endpoint: res.endpoint, httpStatus: res.status, payloadHash: res.payloadHash, fetchedAt: new Date().toISOString() } };
+
+    // No IEX last sale (null `last` on plans without IEX trade data). tngoLast
+    // is a derived mid, not a trade, so fall back to the official latest close.
+    const start = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10);
+    const eodUrl = `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(tiingoTicker(security.ticker))}/prices?startDate=${start}&format=json`;
+    const eodRes = await httpGet(TIINGO.key, eodUrl, { headers: { Authorization: `Token ${key}`, Accept: "application/json" } });
+    const eod = tiingoResponseSchema.safeParse(parseJson(TIINGO.key, eodRes.text, eodRes.endpoint));
+    if (!eod.success) throw new ProviderError(TIINGO.key, "PARSE_ERROR", "Unexpected price response", eodRes.status, eodRes.endpoint);
+    const eodQuote = parseTiingoEodQuote(security.ticker, eod.data);
+    if (!eodQuote) throw new ProviderError(TIINGO.key, "NOT_FOUND", `No IEX last sale or end-of-day close for ${security.ticker}`, eodRes.status, eodRes.endpoint);
+    return { quote: eodQuote, meta: { endpoint: eodRes.endpoint, httpStatus: eodRes.status, payloadHash: eodRes.payloadHash, fetchedAt: new Date().toISOString() } };
   },
 };

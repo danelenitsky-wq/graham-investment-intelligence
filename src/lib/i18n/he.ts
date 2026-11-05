@@ -437,7 +437,7 @@ export const he: Dictionary = {
     retrievedAt: "התקבל",
     provider: "ספק",
     feeds: { REALTIME: "פיד בזמן אמת", DELAYED: "פיד מושהה", EOD: "נתוני סוף יום", UNKNOWN: "פיד שלא אושר כזמן אמת" },
-    feedNotes: { IEX_ONLY: "בורסת IEX בלבד" },
+    feedNotes: { IEX_ONLY: "בורסת IEX בלבד", TIINGO_EOD_CLOSE: "שער סגירה רשמי (Tiingo)" },
     session: { OPEN: "המסחר פתוח", CLOSED: "המסחר סגור", UNKNOWN: "לוח המסחר אינו ממודל" },
     closedReasons: { WEEKEND: "סוף שבוע", HOLIDAY: "חג", BEFORE_OPEN: "לפני הפתיחה", AFTER_CLOSE: "אחרי הסגירה" },
     earlyClose: "סגירה מוקדמת",
