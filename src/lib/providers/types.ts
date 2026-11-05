@@ -103,10 +103,18 @@ export interface FilingRef {
   url: string;
 }
 
+/** Issuer reference data from the filings index (SEC submissions: SIC code, fiscal year end). */
+export interface IssuerProfile {
+  sicCode: string | null;
+  sicDescription: string | null;
+  /** 1–12, or null when not reported. */
+  fiscalYearEndMonth: number | null;
+}
+
 export interface FilingsProvider {
   descriptor: ProviderDescriptor;
   /** Most recent periodic reports (10-K, 10-Q, 20-F, 40-F and amendments), newest first. */
-  latestPeriodicFilings(security: SecurityRef): Promise<{ filings: FilingRef[]; meta: FetchMeta }>;
+  latestPeriodicFilings(security: SecurityRef): Promise<{ filings: FilingRef[]; meta: FetchMeta; profile?: IssuerProfile }>;
 }
 
 /** Independent statements source used to verify primary filings. */

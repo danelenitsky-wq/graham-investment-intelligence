@@ -147,3 +147,80 @@ export function dividendYearsFromStatements(annual: AnnualFinancials[]): number[
     .filter((a) => (a.values.dividendsPerShare ?? 0) > 0 || Math.abs(a.values.dividendsPaid ?? 0) > 0)
     .map((a) => a.fiscalYear);
 }
+
+// ───────────── sourced values with an explicit derivation note (engine v2) ─────────────
+
+export type ValueNote = "inferredAbsent" | "derived" | "lowerBound" | "missing" | undefined;
+export interface Noted {
+  value: Num;
+  note: ValueNote;
+}
+
+const reported = (v: number | undefined): Noted => (v === undefined ? { value: null, note: "missing" } : { value: v, note: undefined });
+
+/**
+ * A complete balance sheet: total assets, equity and either total liabilities
+ * or total liabilities-and-equity are all tagged (registry AI-ABSENT-LINE).
+ */
+export function hasCompleteBalanceSheet(a: AnnualFinancials | null): boolean {
+  const v = a?.values;
+  if (!v) return false;
+  return v.totalAssets !== undefined && v.stockholdersEquity !== undefined && (v.totalLiabilities !== undefined || v.liabilitiesAndEquity !== undefined);
+}
+
+/** A line that is not presented on a complete balance sheet is "none" (flagged); otherwise unknown. */
+export function absentMeansNone(a: AnnualFinancials | null, concept: "preferredStock" | "goodwill" | "intangibleAssets" | "shortTermBorrowings"): Noted {
+  const v = a?.values[concept];
+  if (v !== undefined) return { value: v, note: undefined };
+  return hasCompleteBalanceSheet(a) ? { value: 0, note: "inferredAbsent" } : { value: null, note: "missing" };
+}
+
+/** Total liabilities, derived as L&E − total equity when no total-liabilities line is tagged (registry X-TL). */
+export function totalLiabilitiesNoted(a: AnnualFinancials | null): Noted {
+  const v = a?.values;
+  if (!v) return { value: null, note: "missing" };
+  if (v.totalLiabilities !== undefined) return { value: v.totalLiabilities, note: undefined };
+  const eq = v.totalEquityInclNci ?? v.stockholdersEquity;
+  if (v.liabilitiesAndEquity !== undefined && eq !== undefined) return { value: v.liabilitiesAndEquity - eq, note: "derived" };
+  return { value: null, note: "missing" };
+}
+
+export function longTermDebtNoted(a: AnnualFinancials | null): Noted {
+  if (!a) return { value: null, note: "missing" };
+  if (a.values.longTermDebt !== undefined) return { value: a.values.longTermDebt, note: undefined };
+  const inferred = longTermDebt(a);
+  return inferred === null ? { value: null, note: "missing" } : { value: inferred, note: "inferredAbsent" };
+}
+
+/**
+ * Debt due within a year (registry AI-TOTAL-DEBT). The DebtCurrent tag already
+ * includes short-term borrowings; current maturities of long-term debt do not.
+ */
+export function currentDebtNoted(a: AnnualFinancials | null, debtCurrentTag: string | undefined): Noted {
+  const v = a?.values;
+  if (!v || v.debtCurrent === undefined) {
+    if (v?.shortTermBorrowings !== undefined) return { value: v.shortTermBorrowings, note: "lowerBound" };
+    return { value: null, note: "missing" };
+  }
+  if (debtCurrentTag === "us-gaap:DebtCurrent") return { value: v.debtCurrent, note: undefined };
+  const stb = absentMeansNone(a, "shortTermBorrowings");
+  if (stb.value === null) return { value: v.debtCurrent, note: "lowerBound" };
+  return { value: v.debtCurrent + stb.value, note: stb.note };
+}
+
+export function commonEquityNoted(a: AnnualFinancials | null): Noted {
+  const eq = a?.values.stockholdersEquity;
+  if (eq === undefined) return { value: null, note: "missing" };
+  const pref = absentMeansNone(a, "preferredStock");
+  if (pref.value === null) return { value: null, note: "missing" };
+  return { value: eq - pref.value, note: pref.note };
+}
+
+export function sharesNoted(a: AnnualFinancials | null): Noted {
+  const v = a?.values;
+  if (v?.sharesOutstanding !== undefined && v.sharesOutstanding > 0) return { value: v.sharesOutstanding, note: undefined };
+  if (v?.dilutedShares !== undefined && v.dilutedShares > 0) return { value: v.dilutedShares, note: "derived" };
+  return { value: null, note: "missing" };
+}
+
+export { reported };

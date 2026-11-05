@@ -78,7 +78,7 @@ async function Content({ locale, dict }: { locale: Locale; dict: Dictionary }) {
                       <div className="flex items-center gap-2">
                         <ScreenStrip screen={snap} dict={dict} />
                         <Badge variant="outline" className="font-mono font-normal">
-                          {snap.passed}/{snap.rules.length}
+                          {snap.passed}/{snap.rules.filter((r) => r.counted !== false).length}
                         </Badge>
                       </div>
                     ) : (

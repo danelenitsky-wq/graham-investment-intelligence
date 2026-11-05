@@ -1,15 +1,14 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AnalysisTabs } from "@/components/analysis/analysis-tabs";
 import { DataPanel } from "@/components/analysis/data-panel";
 import { FinancialHistory } from "@/components/analysis/financial-history";
+import { GrahamPanels } from "@/components/analysis/graham-panels";
 import { SecurityHeader } from "@/components/analysis/security-header";
 import { SummaryPanel } from "@/components/analysis/summary-panel";
 import { ValuationPanel } from "@/components/analysis/valuation-panel";
 import { RefreshButton, WatchlistButton } from "@/components/finance/action-buttons";
-import { DevFixtureBanner, InsufficientDataBanner, MethodologyBadge } from "@/components/finance/badges";
-import { RuleList, RuleRow, ScreenSummary } from "@/components/finance/rule-list";
+import { DevFixtureBanner, InsufficientDataBanner } from "@/components/finance/badges";
 import { PageSkeleton } from "@/components/finance/states";
 import { resolveLocale } from "@/lib/i18n/server";
 import { securityPath } from "@/lib/i18n/paths";
@@ -39,7 +38,6 @@ async function Analysis({ params, searchParams }: Props) {
   const quote = await getQuoteView(security.id);
   const [a, onWatchlist] = await Promise.all([getSecurityAnalysis(security.id, { growthPercentOverride: g, quote }), isOnWatchlist(security.id)]);
   if (!a) notFound();
-  const currency = a.annual[a.annual.length - 1]?.currency ?? "USD";
   const gated = !a.health.gate.sufficient;
   const gate = gated ? <InsufficientDataBanner dict={dict} /> : null;
 
@@ -75,38 +73,7 @@ async function Analysis({ params, searchParams }: Props) {
             content: (
               <div className="flex flex-col gap-5">
                 {gate}
-                <div className="grid gap-5 xl:grid-cols-2">
-                  {[
-                    [a.defensive, dict.stock.defensiveScreen],
-                    [a.enterprising, dict.stock.enterprisingScreen],
-                  ].map(([screen, title]) => {
-                    const s = screen as typeof a.defensive;
-                    return (
-                      <Card key={s.screen}>
-                        <CardHeader>
-                          <CardTitle>{title as string}</CardTitle>
-                          <CardDescription>{gated ? <span className="font-semibold text-negative">{dict.health.insufficient}</span> : <ScreenSummary screen={s} dict={dict} />}</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <RuleList screen={s} dict={dict} locale={locale} currency={currency} />
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-                <Card className="border-info/30">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      {dict.valuation.modern} <MethodologyBadge methodology="MODERN_EXTENSION" dict={dict} />
-                    </CardTitle>
-                    <CardDescription>{dict.valuation.modernNote}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ul>
-                      <RuleRow rule={a.modern.inflationAdjustedSize} dict={dict} locale={locale} currency={currency} />
-                    </ul>
-                  </CardContent>
-                </Card>
+                <GrahamPanels a={a} dict={dict} locale={locale} gated={gated} />
               </div>
             ),
           },

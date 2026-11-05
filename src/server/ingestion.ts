@@ -19,6 +19,7 @@ import { env } from "./env";
 import { getSettings } from "./settings";
 import { saveAnalysisSnapshots } from "./analysis";
 import { verifyDividends, verifyFundamentals } from "./verification";
+import { refreshIssuerProfile } from "./filings";
 
 export const EXCHANGES = [
   { code: "NASDAQ", mic: "XNAS", name: "Nasdaq", nameHe: "נאסד\"ק", market: "US", country: "US", currency: "USD", timezone: "America/New_York" },
@@ -349,6 +350,8 @@ export async function refreshSecurity(securityId: string): Promise<RefreshOutcom
   if (security.exchange.code === DEV_EXCHANGE.code) {
     return refreshFixtureSecurity(securityId);
   }
+  // Issuer profile (SIC code → Graham issuer type; fiscal year end → dividend attribution). Best effort.
+  await refreshIssuerProfile(securityId);
   // Prices first: split history is needed to make per-share fundamentals comparable.
   const prices = await refreshPrices(securityId);
   const fundamentals = await refreshFundamentals(securityId, prices.splits);

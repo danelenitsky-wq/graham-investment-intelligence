@@ -1,6 +1,6 @@
 "use client";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { formatCompact, formatCurrency } from "@/lib/format";
+import { formatCompact, formatCurrency, formatRatio } from "@/lib/format";
 import { useI18n } from "@/components/layout/providers";
 
 const tooltipStyle = { background: "var(--color-popover)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 };
@@ -34,7 +34,7 @@ export function AnnualBarChart({ data, series, currency }: { data: Record<string
 }
 
 /** Per-share lines (EPS, book value, dividends). */
-export function PerShareLineChart({ data, series, currency }: { data: Record<string, number | null>[]; series: SeriesDef[]; currency: string }) {
+export function PerShareLineChart({ data, series, currency, format = "currency" }: { data: Record<string, number | null>[]; series: SeriesDef[]; currency: string; format?: "currency" | "ratio" }) {
   const { locale } = useI18n();
   return (
     <div dir="ltr" className="h-64 w-full">
@@ -43,7 +43,7 @@ export function PerShareLineChart({ data, series, currency }: { data: Record<str
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
           <XAxis dataKey="fiscalYear" tick={tick} stroke="var(--color-border)" />
           <YAxis orientation="right" tick={tick} width={44} stroke="var(--color-border)" />
-          <Tooltip contentStyle={tooltipStyle} formatter={(v, name) => [formatCurrency(locale, Number(v), currency), String(name)]} />
+          <Tooltip contentStyle={tooltipStyle} formatter={(v, name) => [format === "ratio" ? formatRatio(locale, Number(v)) : formatCurrency(locale, Number(v), currency), String(name)]} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {series.map((s) => (
             <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={{ r: 2 }} connectNulls={false} isAnimationActive={false} />

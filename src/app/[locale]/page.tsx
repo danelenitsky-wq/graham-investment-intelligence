@@ -92,7 +92,7 @@ async function Recent({ locale, dict }: { locale: Locale; dict: Dictionary }) {
             <span className="min-w-0 flex-1 truncate text-sm">{locale === "he" && s.security.nameHe ? s.security.nameHe : s.security.name}</span>
             {s.usesDevFixtureData && <DevFixtureBadge dict={dict} />}
             <Badge variant="outline" className="font-normal">
-              {res.passed}/{res.rules.length}
+              {res.passed}/{res.rules.filter((r) => r.counted !== false).length}
             </Badge>
             <StatusBadge status={res.outcome === "MEETS_ALL" ? "PASS" : res.outcome === "FAILS_ONE_OR_MORE" ? "FAIL" : "INSUFFICIENT_DATA"} dict={dict} />
             <span className="hidden w-28 text-end text-xs text-muted-foreground sm:block">{formatDate(locale, s.computedAt.toISOString())}</span>

@@ -65,6 +65,7 @@ the real normalization → engines → UI pipeline. Every page that shows them c
 | `db:migrate` / `db:deploy` / `db:studio` | Prisma |
 | `data:sync-universe` | SEC security master sync |
 | `data:refresh -- TICKER …` | Fetch prices + annual/quarterly statements, cross-check (FMP Basic if set, SEC dividends) |
+| `graham:real [-- TICKERS] [--no-refresh] [--out file]` | Graham engine end to end on real companies (needs network) |
 | `validate:free [-- TICKERS] [--db] [--out file]` | Live validation of the free providers (MSFT, NVDA, GOOGL by default): PASS / FAIL / BLOCKED / SKIPPED |
 | `data:check-filings [-- --force]` | Daily check for new 10-K/10-Q filings; refreshes only what changed |
 | `acceptance:quote -- TICKER [--url URL]` | Live quote acceptance test (stops at the configuration checkpoint without keys) |
@@ -87,7 +88,7 @@ src/
       concepts.ts           canonical concepts ← ordered XBRL tag candidates
       statements.ts         companyfacts → annual periods (restatements, split adjustment)
       market.ts             price bar validation, ILA→ILS
-    graham/                 Graham rules engine (1973): defensive Ch.14, enterprising Ch.15
+    graham/                 Graham engine (1973): registry, defensive Ch.14, enterprising Ch.15, net-net — see docs/GRAHAM_ENGINE.md
     valuation/
       graham.ts             Ch.11 formula, Graham number (derived), NCAV, margin of safety
       modern.ts             MODERN_EXTENSION: CPI-adjusted size, 4.4/Y formula, FCF, ROE…

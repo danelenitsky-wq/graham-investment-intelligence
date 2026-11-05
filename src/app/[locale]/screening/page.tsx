@@ -1,3 +1,4 @@
+import { findRule, ruleValue } from "@/lib/graham/rules";
 import { Suspense } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -65,8 +66,8 @@ async function Results({ locale, dict, searchParams }: { locale: Locale; dict: D
           </TableHeader>
           <TableBody>
             {rows.map((a) => {
-              const pe = a.defensive.rules.find((r) => r.id === "defensive.moderatePe")?.measured.pe3y ?? null;
-              const pb = a.defensive.rules.find((r) => r.id === "defensive.moderatePriceToAssets")?.measured.priceToBook ?? null;
+              const pe = ruleValue(findRule(a.defensive, "D6"), "pe3y");
+              const pb = ruleValue(findRule(a.defensive, "D7"), "priceToBook");
               return (
                 <TableRow key={a.security.id}>
                   <TableCell>
@@ -87,7 +88,7 @@ async function Results({ locale, dict, searchParams }: { locale: Locale; dict: D
                     <div className="flex items-center gap-2">
                       <ScreenStrip screen={a.defensive} dict={dict} />
                       <Badge variant="outline" className="font-mono font-normal">
-                        {a.defensive.passed}/{a.defensive.rules.length}
+                        {a.defensive.passed}/{a.defensive.rules.filter((r) => r.counted !== false).length}
                       </Badge>
                     </div>
                   </TableCell>
@@ -95,7 +96,7 @@ async function Results({ locale, dict, searchParams }: { locale: Locale; dict: D
                     <div className="flex items-center gap-2">
                       <ScreenStrip screen={a.enterprising} dict={dict} />
                       <Badge variant="outline" className="font-mono font-normal">
-                        {a.enterprising.passed}/{a.enterprising.rules.length}
+                        {a.enterprising.passed}/{a.enterprising.rules.filter((r) => r.counted !== false).length}
                       </Badge>
                     </div>
                   </TableCell>

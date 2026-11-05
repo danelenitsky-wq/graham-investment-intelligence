@@ -24,7 +24,8 @@ export const settingsSchema = z.object({
     })
     .default(DEFAULT_FRESHNESS),
   enterprisingLookbackYears: z.number().int().min(1).max(10).default(ENTERPRISING_THRESHOLDS.earningsGrowthLookbackYears),
-  priceHistoryYears: z.number().int().min(1).max(40).default(20),
+  /** 22 years so that the 20-fiscal-year dividend record (D4) can be fully covered by daily history. */
+  priceHistoryYears: z.number().int().min(1).max(40).default(22),
 });
 export type AppSettings = z.infer<typeof settingsSchema>;
 export const SETTINGS_KEY = "app";

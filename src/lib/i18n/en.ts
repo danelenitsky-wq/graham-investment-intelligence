@@ -1,3 +1,4 @@
+import { grahamEn } from "./graham-en";
 /** English dictionary. The Hebrew dictionary must have the same shape (enforced by type). */
 export const en = {
   meta: { dir: "ltr", lang: "en", localeTag: "en-US" },
@@ -69,6 +70,7 @@ export const en = {
       MEETS_ALL: "Meets all criteria",
       FAILS_ONE_OR_MORE: "Fails one or more criteria",
       INCOMPLETE_DATA: "Incomplete data",
+      NOT_APPLICABLE: "Not applicable",
     },
     freshness: { FRESH: "Fresh", AGING: "Aging", STALE: "Stale", MISSING: "Missing" },
     daysAgo: "{n} days ago",
@@ -272,6 +274,11 @@ export const en = {
     aaaYieldPercent: "AAA yield Y (%)",
   },
   concepts: {
+    accountsReceivable: "Accounts receivable",
+    inventory: "Inventory",
+    debtCurrent: "Debt due within a year",
+    shortTermBorrowings: "Short-term borrowings",
+    debtMaturingNext12m: "LTD maturing in 12 months",
     revenue: "Revenue",
     operatingIncome: "Operating income",
     pretaxIncome: "Pre-tax income",
@@ -515,6 +522,7 @@ export const en = {
     providersNote: "API keys are read from server environment variables only and are never sent to the browser.",
     invalid: "Some values are invalid.",
   },
+  graham: grahamEn,
 };
 
 type Widen<T> = T extends string ? string : T extends readonly (infer U)[] ? readonly Widen<U>[] : { [K in keyof T]: Widen<T[K]> };
