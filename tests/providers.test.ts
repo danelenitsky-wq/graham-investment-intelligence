@@ -53,7 +53,7 @@ describe("development fixtures", () => {
     const result = normalizeCompanyFacts(fixtureCompanyFacts(FIXTURE_COMPANIES[0]), { splits: [] });
     expect(result.periods).toHaveLength(FIXTURE_COMPANIES[0].years.length);
     const r = evaluateDefensive({ annual: toAnnualFinancials(result.periods), price: null, isUtility: false });
-    expect(r.rules).toHaveLength(7);
+    expect(r.rules.filter((x) => x.counted)).toHaveLength(7);
   });
   it("generate deterministic price paths", () => {
     const a = fixturePriceHistory(FIXTURE_COMPANIES[0], "2024-01-01", "2024-03-01");

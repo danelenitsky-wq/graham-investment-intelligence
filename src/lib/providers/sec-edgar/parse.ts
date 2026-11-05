@@ -1,5 +1,5 @@
 /** Pure parsers for SEC EDGAR payloads (no I/O, unit-tested). */
-import type { FilingRef, UniverseEntry } from "../types";
+import type { FilingRef, IssuerProfile, UniverseEntry } from "../types";
 import type { Submissions, TickerExchangeFile } from "./types";
 
 const EXCHANGE_MAP: Record<string, string> = {
@@ -67,4 +67,14 @@ export function parsePeriodicFilings(sub: Submissions): FilingRef[] {
     });
   }
   return out.sort((a, b) => b.filingDate.localeCompare(a.filingDate) || (b.acceptedAt ?? "").localeCompare(a.acceptedAt ?? ""));
+}
+
+/** SIC code and fiscal-year-end month from an EDGAR submissions record ("fiscalYearEnd": "0630" → 6). */
+export function issuerProfile(sub: Submissions): IssuerProfile {
+  const fye = sub.fiscalYearEnd && /^\d{4}$/.test(sub.fiscalYearEnd) ? Number(sub.fiscalYearEnd.slice(0, 2)) : null;
+  return {
+    sicCode: sub.sic && /^\d{3,4}$/.test(sub.sic) ? sub.sic.padStart(4, "0") : null,
+    sicDescription: sub.sicDescription ?? null,
+    fiscalYearEndMonth: fye && fye >= 1 && fye <= 12 ? fye : null,
+  };
 }

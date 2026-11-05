@@ -9,12 +9,14 @@ import {
   validateAnnualFinancials,
   type FreshnessReport,
 } from "@/lib/freshness";
-import { evaluateDefensive, evaluateEnterprising, GRAHAM_ENGINE_VERSION } from "@/lib/graham/rules";
-import type { GrahamInputs, RuleResult, ScreenResult } from "@/lib/graham/types";
+import { analyzeGraham, GRAHAM_ENGINE_VERSION, type GrahamAnalysis } from "@/lib/graham";
+import { classifyIssuer } from "@/lib/graham/classification";
+import { CPI_DEFAULT } from "@/lib/graham/registry";
+import type { CpiReference, GrahamInputs, ScreenResult } from "@/lib/graham/types";
 import type { CanonicalConcept } from "@/lib/normalization/concepts";
 import type { AnnualFinancials } from "@/lib/normalization/statements";
 import { valueWithGraham, VALUATION_ENGINE_VERSION, type GrahamValuation, type ValueEstimate } from "@/lib/valuation/graham";
-import { bondYieldAdjustedFormula, inflationAdjustedSize, modernMetrics, type ModernMetrics } from "@/lib/valuation/modern";
+import { bondYieldAdjustedFormula, modernMetrics, type ModernMetrics } from "@/lib/valuation/modern";
 import type { AppSettings } from "@/lib/settings/schema";
 import { evaluateDataSufficiency, type GateResult } from "@/lib/freshness/gate";
 import { filingUrl } from "@/lib/providers/sec-edgar/parse";
@@ -35,6 +37,9 @@ export interface SecuritySummary {
   sector: string | null;
   industry: string | null;
   isUtility: boolean;
+  sicCode: string | null;
+  assetType: string;
+  fiscalYearEndMonth: number | null;
   reportingCurrency: string | null;
   isDevFixture: boolean;
 }
@@ -123,8 +128,10 @@ export interface SecurityAnalysis {
   provenance: PeriodProvenance[];
   defensive: ScreenResult;
   enterprising: ScreenResult;
+  /** Full Graham engine output: classification, three panels, trends, excluded distributions. */
+  graham: GrahamAnalysis;
   valuation: GrahamValuation;
-  modern: { inflationAdjustedSize: RuleResult; bondYieldAdjusted: ValueEstimate; metrics: ModernMetrics };
+  modern: { bondYieldAdjusted: ValueEstimate; metrics: ModernMetrics };
   freshness: FreshnessReport;
   decision: DecisionResult;
   fetches: { dataset: string; status: string; sourceKey: string; startedAt: string; completedAt: string | null; errorMessage: string | null }[];
@@ -140,12 +147,6 @@ function lastFundamentalsFetchFailed(fetches: { dataset: string; status: string 
   return last?.status === "FAILED";
 }
 
-function fiscalYearOf(date: Date, fiscalYearEndMonth: number | null): number {
-  const m = date.getUTCMonth() + 1;
-  const y = date.getUTCFullYear();
-  const fyEnd = fiscalYearEndMonth ?? 12;
-  return m > fyEnd ? y + 1 : y;
-}
 
 export async function findSecurity(exchangeCode: string, ticker: string) {
   return db.security.findFirst({
@@ -244,30 +245,46 @@ export async function getSecurityAnalysis(
       : null;
 
   const dividendRows = actions.filter((a) => a.type === "CASH_DIVIDEND" && a.amount !== null);
-  const dividendYears = [...new Set(dividendRows.map((d) => fiscalYearOf(d.exDate, security.fiscalYearEndMonth)))];
-  // A fiscal year is "covered" by price-provider dividend data only when bars span it entirely.
-  const coverage: number[] = [];
-  if (bars.length) {
-    const firstFy = fiscalYearOf(bars[0].date, security.fiscalYearEndMonth) + 1;
-    const lastFy = fiscalYearOf(lastBar.date, security.fiscalYearEndMonth) - 1;
-    for (let y = firstFy; y <= lastFy; y++) coverage.push(y);
-  }
+  const priceSourceName = bars.length ? bars[bars.length - 1].source.name : undefined;
+  const cpi: CpiReference = settings.currentCpi
+    ? {
+        baseYear: CPI_DEFAULT.baseYear,
+        baseValue: CPI_DEFAULT.baseValue,
+        currentLabel: settings.currentCpi.asOf,
+        currentValue: settings.currentCpi.value,
+        sourceLabel: settings.currentCpi.source,
+        sourceUrl: null,
+      }
+    : { ...CPI_DEFAULT };
 
   const inputs: GrahamInputs = {
     annual,
-    price: price ? { value: price.value, date: price.date, currency: price.currency } : null,
-    isUtility: security.isUtility,
-    dividendYears,
-    dividendCoverageYears: coverage,
+    price: price ? { value: price.value, date: price.date, currency: price.currency, sourceName: price.sourceKey } : null,
+    classification: classifyIssuer({ sicCode: security.sicCode, assetType: security.assetType, isUtility: security.isUtility, latest: annual[annual.length - 1] ?? null }),
+    dividends: dividendRows.map((d) => ({ exDate: iso(d.exDate), amount: Number(d.amount) })),
+    dividendSourceName: priceSourceName,
+    closes: bars.map((b) => ({ date: iso(b.date), close: Number(b.close) })),
+    priceHistoryRange: bars.length ? { first: iso(bars[0].date), last: iso(lastBar.date) } : null,
+    fiscalYearEndMonth: security.fiscalYearEndMonth,
+    provenance: provenance.map((p) => ({
+      fiscalYear: p.fiscalYear,
+      periodEnd: p.periodEnd,
+      sourceName: p.sourceName,
+      form: p.form,
+      accessionNumber: p.accessionNumber,
+      filingUrl: p.filingUrl,
+      concepts: p.concepts,
+    })),
+    cpi,
+    enterprisingLookbackYears: settings.enterprisingLookbackYears,
   };
-  const defensive = evaluateDefensive(inputs);
-  const enterprising = evaluateEnterprising(inputs, { earningsGrowthLookbackYears: settings.enterprisingLookbackYears });
+  const graham = analyzeGraham(inputs);
+  const { defensive, enterprising } = graham;
   const lastCurrency = annual[annual.length - 1]?.currency;
   const comparablePrice = price && price.currency === lastCurrency ? price.value : null;
   const valuation = valueWithGraham({ annual, price: comparablePrice, growthPercentOverride: options.growthPercentOverride });
   const aaa = settings.aaaBondYield?.value ?? null;
   const modern = {
-    inflationAdjustedSize: inflationAdjustedSize({ annual, isUtility: security.isUtility, currentCpi: settings.currentCpi?.value ?? null }),
     bondYieldAdjusted: bondYieldAdjustedFormula({ earnings: valuation.normalEarnings, growthPercent: valuation.growthPercentUsed, aaaYieldPercent: aaa }),
     metrics: modernMetrics({ annual, price: comparablePrice, normalEarnings: valuation.normalEarnings, aaaYieldPercent: aaa }),
   };
@@ -379,6 +396,9 @@ export async function getSecurityAnalysis(
       sector: security.sector,
       industry: security.industry,
       isUtility: security.isUtility,
+      sicCode: security.sicCode,
+      assetType: security.assetType,
+      fiscalYearEndMonth: security.fiscalYearEndMonth,
       reportingCurrency: security.reportingCurrency,
       isDevFixture: security.source?.isDevFixture ?? false,
     },
@@ -387,11 +407,15 @@ export async function getSecurityAnalysis(
     health,
     quarterly: quarterly.slice(0, 12),
     priceHistory,
-    dividends: dividendRows.slice(-40).map((d) => ({ exDate: iso(d.exDate), amount: Number(d.amount), currency: d.currency })),
+    dividends: dividendRows
+      .filter((d) => !graham.excludedDistributions.some((x) => x.exDate === iso(d.exDate)))
+      .slice(-40)
+      .map((d) => ({ exDate: iso(d.exDate), amount: Number(d.amount), currency: d.currency })),
     annual,
     provenance,
     defensive,
     enterprising,
+    graham,
     valuation,
     modern,
     freshness,
@@ -476,6 +500,7 @@ export async function saveAnalysisSnapshots(securityId: string) {
     data: [
       { ...common, engine: "graham-defensive", engineVersion: GRAHAM_ENGINE_VERSION, methodology: "GRAHAM_1973", results: a.defensive as unknown as Prisma.InputJsonValue },
       { ...common, engine: "graham-enterprising", engineVersion: GRAHAM_ENGINE_VERSION, methodology: "GRAHAM_1973", results: a.enterprising as unknown as Prisma.InputJsonValue },
+      { ...common, engine: "graham-net-net", engineVersion: GRAHAM_ENGINE_VERSION, methodology: "GRAHAM_1973", results: a.graham.netNet as unknown as Prisma.InputJsonValue },
       { ...common, engine: "valuation", engineVersion: VALUATION_ENGINE_VERSION, methodology: "GRAHAM_1973", results: a.valuation as unknown as Prisma.InputJsonValue },
       { ...common, engine: "modern-extensions", engineVersion: VALUATION_ENGINE_VERSION, methodology: "MODERN_EXTENSION", results: a.modern as unknown as Prisma.InputJsonValue },
     ],

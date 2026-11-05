@@ -147,3 +147,109 @@ export function dividendYearsFromStatements(annual: AnnualFinancials[]): number[
     .filter((a) => (a.values.dividendsPerShare ?? 0) > 0 || Math.abs(a.values.dividendsPaid ?? 0) > 0)
     .map((a) => a.fiscalYear);
 }
+
+// ───────────── sourced values with an explicit derivation note (engine v2) ─────────────
+
+export type ValueNote = "inferredAbsent" | "derived" | "lowerBound" | "missing" | undefined;
+export interface Noted {
+  value: Num;
+  note: ValueNote;
+}
+
+const reported = (v: number | undefined): Noted => (v === undefined ? { value: null, note: "missing" } : { value: v, note: undefined });
+
+/**
+ * A complete balance sheet: total assets, equity and either total liabilities
+ * or total liabilities-and-equity are all tagged (registry AI-ABSENT-LINE).
+ */
+export function hasCompleteBalanceSheet(a: AnnualFinancials | null): boolean {
+  const v = a?.values;
+  if (!v) return false;
+  const equity = v.stockholdersEquity ?? v.totalEquityInclNci;
+  return v.totalAssets !== undefined && equity !== undefined && (v.totalLiabilities !== undefined || v.liabilitiesAndEquity !== undefined);
+}
+
+/** A line that is not presented on a complete balance sheet is "none" (flagged); otherwise unknown. */
+export function absentMeansNone(a: AnnualFinancials | null, concept: "preferredStock" | "goodwill" | "intangibleAssets" | "shortTermBorrowings"): Noted {
+  const v = a?.values[concept];
+  if (v !== undefined) return { value: v, note: undefined };
+  return hasCompleteBalanceSheet(a) ? { value: 0, note: "inferredAbsent" } : { value: null, note: "missing" };
+}
+
+/** Total liabilities, derived as L&E − total equity when no total-liabilities line is tagged (registry X-TL). */
+export function totalLiabilitiesNoted(a: AnnualFinancials | null): Noted {
+  const v = a?.values;
+  if (!v) return { value: null, note: "missing" };
+  if (v.totalLiabilities !== undefined) return { value: v.totalLiabilities, note: undefined };
+  const eq = v.totalEquityInclNci ?? v.stockholdersEquity;
+  if (v.liabilitiesAndEquity !== undefined && eq !== undefined) return { value: v.liabilitiesAndEquity - eq, note: "derived" };
+  return { value: null, note: "missing" };
+}
+
+export function longTermDebtNoted(a: AnnualFinancials | null): Noted {
+  if (!a) return { value: null, note: "missing" };
+  if (a.values.longTermDebt !== undefined) return { value: a.values.longTermDebt, note: undefined };
+  const inferred = longTermDebt(a);
+  return inferred === null ? { value: null, note: "missing" } : { value: inferred, note: "inferredAbsent" };
+}
+
+/**
+ * Debt due within a year (registry AI-TOTAL-DEBT). The DebtCurrent tag already
+ * includes short-term borrowings; current maturities of long-term debt do not.
+ */
+export function currentDebtNoted(a: AnnualFinancials | null, debtCurrentTag: string | undefined): Noted {
+  const v = a?.values;
+  if (!v || v.debtCurrent === undefined) {
+    if (v?.shortTermBorrowings !== undefined) return { value: v.shortTermBorrowings, note: "lowerBound" };
+    return { value: null, note: "missing" };
+  }
+  if (debtCurrentTag === "us-gaap:DebtCurrent") return { value: v.debtCurrent, note: undefined };
+  const stb = absentMeansNone(a, "shortTermBorrowings");
+  if (stb.value === null) return { value: v.debtCurrent, note: "lowerBound" };
+  return { value: v.debtCurrent + stb.value, note: stb.note };
+}
+
+/**
+ * Equity attributable to the parent's shareholders (registry AI-EQUITY-NCI).
+ * Some issuers (e.g. Johnson & Johnson's recent 10-Ks) tag only total equity
+ * including noncontrolling interests. Then parent equity = total equity − NCI,
+ * with an untagged NCI line treated as not presented on that balance sheet.
+ */
+export function parentEquityNoted(a: AnnualFinancials | null): Noted {
+  const v = a?.values;
+  if (!v) return { value: null, note: "missing" };
+  if (v.stockholdersEquity !== undefined) return { value: v.stockholdersEquity, note: undefined };
+  if (v.totalEquityInclNci === undefined) return { value: null, note: "missing" };
+  if (v.noncontrollingInterest !== undefined) return { value: v.totalEquityInclNci - v.noncontrollingInterest, note: "derived" };
+  return hasCompleteBalanceSheet(a) ? { value: v.totalEquityInclNci, note: "inferredAbsent" } : { value: null, note: "missing" };
+}
+
+export function commonEquityNoted(a: AnnualFinancials | null): Noted {
+  const eq = parentEquityNoted(a);
+  if (eq.value === null) return { value: null, note: "missing" };
+  const pref = absentMeansNone(a, "preferredStock");
+  if (pref.value === null) return { value: null, note: "missing" };
+  return { value: eq.value - pref.value, note: eq.note ?? pref.note };
+}
+
+/**
+ * Operating income; when the issuer does not tag it (Johnson & Johnson stopped
+ * in 2015), a proxy of pre-tax income + interest expense, flagged "derived"
+ * (registry AI-OPINC-PROXY). Used only by the informational risk indicators.
+ */
+export function operatingIncomeNoted(a: AnnualFinancials | null): Noted {
+  const v = a?.values;
+  if (!v) return { value: null, note: "missing" };
+  if (v.operatingIncome !== undefined) return { value: v.operatingIncome, note: undefined };
+  if (v.pretaxIncome !== undefined && v.interestExpense !== undefined) return { value: v.pretaxIncome + v.interestExpense, note: "derived" };
+  return { value: null, note: "missing" };
+}
+
+export function sharesNoted(a: AnnualFinancials | null): Noted {
+  const v = a?.values;
+  if (v?.sharesOutstanding !== undefined && v.sharesOutstanding > 0) return { value: v.sharesOutstanding, note: undefined };
+  if (v?.dilutedShares !== undefined && v.dilutedShares > 0) return { value: v.dilutedShares, note: "derived" };
+  return { value: null, note: "missing" };
+}
+
+export { reported };

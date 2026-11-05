@@ -6,7 +6,8 @@ import { EmptyState } from "@/components/finance/states";
 import { PriceChart } from "@/components/charts/price-chart";
 import type { Dictionary, Locale } from "@/lib/i18n";
 import type { SecurityAnalysis } from "@/server/analysis";
-import { averageEps, bookValuePerShare, currentRatio, latest, ncavPerShare } from "@/lib/graham/metrics";
+import { findRule, ruleValue } from "@/lib/graham/rules";
+import { averageEps, bookValuePerShare, currentRatio, latest } from "@/lib/graham/metrics";
 
 export function SummaryPanel({ a, dict, locale, gated = false }: { a: SecurityAnalysis; dict: Dictionary; locale: Locale; gated?: boolean }) {
   const last = latest(a.annual);
@@ -15,8 +16,8 @@ export function SummaryPanel({ a, dict, locale, gated = false }: { a: SecurityAn
   const eps3 = averageEps(a.annual, 3);
   const bvps = bookValuePerShare(last);
   const dps = last?.values.dividendsPerShare ?? null;
-  const pe3 = a.defensive.rules.find((r) => r.id === "defensive.moderatePe")?.measured.pe3y ?? null;
-  const pb = a.defensive.rules.find((r) => r.id === "defensive.moderatePriceToAssets")?.measured.priceToBook ?? null;
+  const pe3 = ruleValue(findRule(a.defensive, "D6"), "pe3y");
+  const pb = ruleValue(findRule(a.defensive, "D7"), "priceToBook");
   return (
     <div className="flex flex-col gap-5">
       <Card>
@@ -48,14 +49,15 @@ export function SummaryPanel({ a, dict, locale, gated = false }: { a: SecurityAn
           <MetricCard locale={locale} label={dict.metrics.priceToBook} value={pb} format="multiple" />
           <MetricCard locale={locale} label={dict.metrics.currentRatio} value={currentRatio(last)} format="ratio" />
           <MetricCard locale={locale} label={dict.metrics.dividendYield} value={dps !== null && price ? dps / price : null} format="percent" />
-          <MetricCard locale={locale} label={dict.metrics.ncavPerShare} value={ncavPerShare(last)} format="currency" currency={currency} toneBySign />
+          <MetricCard locale={locale} label={dict.metrics.ncavPerShare} value={a.graham.netNet.ncavPerShare} format="currency" currency={currency} toneBySign />
         </div>
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-3">
         {[
-          [a.defensive, dict.stock.defensiveScreen],
-          [a.enterprising, dict.stock.enterprisingScreen],
+          [a.defensive, dict.graham.panels.DEFENSIVE.title],
+          [a.enterprising, dict.graham.panels.ENTERPRISING.title],
+          [a.graham.netNet.screen, dict.graham.panels.NET_NET.title],
         ].map(([s, title]) => {
           const screen = s as SecurityAnalysis["defensive"];
           return (

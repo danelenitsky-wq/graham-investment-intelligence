@@ -1,6 +1,6 @@
 import "server-only";
 import { filingsProviderFor } from "@/lib/providers/registry";
-import { ProviderError, type MarketCode } from "@/lib/providers/types";
+import { ProviderError, type IssuerProfile, type MarketCode } from "@/lib/providers/types";
 import { saveAnalysisSnapshots } from "./analysis";
 import { db } from "./db";
 import { ensureSource, failFetch, finishFetch, refreshFundamentals, startFetch } from "./ingestion";
@@ -36,13 +36,14 @@ export async function checkFilings(securityId: string, options: { force?: boolea
   const source = await ensureSource(provider.descriptor);
   const fetch = await startFetch(source.id, "filings-index", provider.descriptor.baseUrl, securityId);
   try {
-    const { filings, meta } = await provider.latestPeriodicFilings({ ticker: security.ticker, exchangeCode: security.exchange.code, cik: security.cik });
+    const { filings, meta, profile } = await provider.latestPeriodicFilings({ ticker: security.ticker, exchangeCode: security.exchange.code, cik: security.cik });
     await finishFetch(fetch.id, { status: "SUCCESS", endpoint: meta.endpoint, httpStatus: meta.httpStatus, payloadHash: meta.payloadHash, recordCount: filings.length });
     const latest = filings[0];
     await db.security.update({
       where: { id: securityId },
       data: {
         lastFilingCheckAt: new Date(),
+        ...profileUpdate(profile),
         ...(latest && {
           latestFilingAccession: latest.accessionNumber,
           latestFilingForm: latest.form,
@@ -81,4 +82,35 @@ export async function checkAllFilings(options: { force?: boolean } = {}): Promis
   const results: FilingCheckResult[] = [];
   for (const s of securities) results.push(await checkFilings(s.id, options));
   return results;
+}
+
+/** Issuer reference fields from the filings index (SIC → Graham issuer-type classification, fiscal year end → dividend attribution). */
+function profileUpdate(profile: IssuerProfile | undefined) {
+  if (!profile) return {};
+  return {
+    ...(profile.sicCode && { sicCode: profile.sicCode }),
+    ...(profile.sicDescription && { industry: profile.sicDescription }),
+    ...(profile.fiscalYearEndMonth && { fiscalYearEndMonth: profile.fiscalYearEndMonth }),
+  };
+}
+
+/**
+ * Fetch the issuer profile (SIC code, fiscal-year-end month) from the filings
+ * index and store it. Best effort: a failure leaves the stored profile as is.
+ */
+export async function refreshIssuerProfile(securityId: string): Promise<{ status: "UPDATED" | "SKIPPED" | "FAILED"; sicCode?: string | null; error?: string }> {
+  const security = await db.security.findUniqueOrThrow({ where: { id: securityId }, include: { exchange: true } });
+  const provider = filingsProviderFor(security.exchange.market as MarketCode);
+  if (!provider || !security.cik) return { status: "SKIPPED" };
+  const source = await ensureSource(provider.descriptor);
+  const fetch = await startFetch(source.id, "issuer-profile", provider.descriptor.baseUrl, securityId);
+  try {
+    const { meta, profile } = await provider.latestPeriodicFilings({ ticker: security.ticker, exchangeCode: security.exchange.code, cik: security.cik });
+    await finishFetch(fetch.id, { status: "SUCCESS", endpoint: meta.endpoint, httpStatus: meta.httpStatus, payloadHash: meta.payloadHash, recordCount: profile ? 1 : 0 });
+    await db.security.update({ where: { id: securityId }, data: profileUpdate(profile) });
+    return { status: "UPDATED", sicCode: profile?.sicCode ?? null };
+  } catch (e) {
+    await failFetch(fetch.id, e);
+    return { status: "FAILED", error: e instanceof Error ? e.message : String(e) };
+  }
 }

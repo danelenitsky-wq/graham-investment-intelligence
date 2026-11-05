@@ -100,6 +100,13 @@ export const CONCEPTS = {
       "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
     ],
   },
+  accountsReceivable: {
+    statement: "BALANCE_SHEET",
+    unit: "currency",
+    instant: true,
+    candidates: ["us-gaap:AccountsReceivableNetCurrent", "us-gaap:ReceivablesNetCurrent"],
+  },
+  inventory: { statement: "BALANCE_SHEET", unit: "currency", instant: true, candidates: ["us-gaap:InventoryNet"] },
   goodwill: { statement: "BALANCE_SHEET", unit: "currency", instant: true, candidates: ["us-gaap:Goodwill"] },
   intangibleAssets: {
     statement: "BALANCE_SHEET",
@@ -125,6 +132,26 @@ export const CONCEPTS = {
       "us-gaap:LongTermDebtAndFinanceLeaseObligationsNoncurrent",
     ],
   },
+  /** Debt due within a year. DebtCurrent already includes short-term borrowings; the other tags do not. */
+  debtCurrent: {
+    statement: "BALANCE_SHEET",
+    unit: "currency",
+    instant: true,
+    candidates: ["us-gaap:DebtCurrent", "us-gaap:LongTermDebtAndCapitalLeaseObligationsCurrent", "us-gaap:LongTermDebtCurrent"],
+  },
+  shortTermBorrowings: {
+    statement: "BALANCE_SHEET",
+    unit: "currency",
+    instant: true,
+    candidates: ["us-gaap:ShortTermBorrowings", "us-gaap:CommercialPaper"],
+  },
+  /** Principal of long-term debt maturing in the next twelve months (debt-maturity footnote). */
+  debtMaturingNext12m: {
+    statement: "BALANCE_SHEET",
+    unit: "currency",
+    instant: true,
+    candidates: ["us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInNextTwelveMonths"],
+  },
   preferredStock: {
     statement: "BALANCE_SHEET",
     unit: "currency",
@@ -142,6 +169,12 @@ export const CONCEPTS = {
     unit: "currency",
     instant: true,
     candidates: ["us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
+  },
+  noncontrollingInterest: {
+    statement: "BALANCE_SHEET",
+    unit: "currency",
+    instant: true,
+    candidates: ["us-gaap:MinorityInterest"],
   },
   liabilitiesAndEquity: {
     statement: "BALANCE_SHEET",

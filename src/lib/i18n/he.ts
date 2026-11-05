@@ -1,3 +1,4 @@
+import { grahamHe } from "./graham-he";
 import type { Dictionary } from "./en";
 
 /** מילון עברי (ברירת המחדל). */
@@ -70,6 +71,7 @@ export const he: Dictionary = {
       MEETS_ALL: "עומד בכל הקריטריונים",
       FAILS_ONE_OR_MORE: "לא עומד בקריטריון אחד או יותר",
       INCOMPLETE_DATA: "נתונים חלקיים",
+      NOT_APPLICABLE: "לא רלוונטי",
     },
     freshness: { FRESH: "עדכני", AGING: "מתיישן", STALE: "לא עדכני", MISSING: "חסר" },
     daysAgo: "לפני {n} ימים",
@@ -272,6 +274,11 @@ export const he: Dictionary = {
     aaaYieldPercent: "תשואת AAA ‏Y (%)",
   },
   concepts: {
+    accountsReceivable: "לקוחות",
+    inventory: "מלאי",
+    debtCurrent: "חוב לפירעון בתוך שנה",
+    shortTermBorrowings: "אשראי לזמן קצר",
+    debtMaturingNext12m: "חוב ארוך לפירעון ב-12 חודשים",
     revenue: "הכנסות",
     operatingIncome: "רווח תפעולי",
     pretaxIncome: "רווח לפני מס",
@@ -292,6 +299,7 @@ export const he: Dictionary = {
     preferredStock: "מניות בכורה",
     stockholdersEquity: "הון עצמי",
     totalEquityInclNci: "הון כולל זכויות מיעוט",
+    noncontrollingInterest: "זכויות שאינן מקנות שליטה",
     liabilitiesAndEquity: "התחייבויות והון",
     sharesOutstanding: "מניות במחזור",
     operatingCashFlow: "תזרים מפעילות שוטפת",
@@ -515,4 +523,5 @@ export const he: Dictionary = {
     providersNote: "מפתחות API נקראים ממשתני סביבה בשרת בלבד ולעולם אינם נשלחים לדפדפן.",
     invalid: "חלק מהערכים אינם תקינים.",
   },
+  graham: grahamHe,
 };

@@ -8,7 +8,18 @@
  */
 import type { AnnualFinancials } from "@/lib/normalization/statements";
 import { commonEquity, latest, longTermDebt, ratio, type Num } from "@/lib/graham/metrics";
-import type { RuleResult, RuleStatus } from "@/lib/graham/types";
+import type { RuleStatus } from "@/lib/graham/types";
+
+/** Result shape of the legacy modern size check (superseded in the UI by the Graham engine's D1-M). */
+export interface ModernCheckResult {
+  id: string;
+  status: RuleStatus;
+  reason: string;
+  measured: Record<string, number | null>;
+  thresholds: Record<string, number>;
+  assumptions?: string[];
+  citation: { source: "INTELLIGENT_INVESTOR_1973"; chapter: number; note?: string };
+}
 import type { ValueEstimate } from "./graham";
 import { DEFENSIVE_THRESHOLDS } from "@/lib/graham/rules";
 
@@ -24,7 +35,7 @@ export function inflationAdjustedSize(params: {
   isUtility: boolean;
   currentCpi: number | null;
   fxToUsd?: number | null;
-}): RuleResult {
+}): ModernCheckResult {
   const last = latest(params.annual);
   const factor = params.currentCpi && params.currentCpi > 0 ? params.currentCpi / CPI_U_1972_ANNUAL_AVERAGE : null;
   const base = params.isUtility ? DEFENSIVE_THRESHOLDS.minUtilityTotalAssetsUsd : DEFENSIVE_THRESHOLDS.minAnnualSalesUsd;

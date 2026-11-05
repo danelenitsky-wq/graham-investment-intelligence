@@ -4,7 +4,7 @@ import { env } from "@/server/env";
 import { httpGet, parseJson } from "../http";
 import { ProviderError, type FilingsProvider, type FundamentalsProvider, type ProviderDescriptor, type ReferenceProvider } from "../types";
 import { companyFactsSchema, submissionsSchema, tickerExchangeSchema } from "./types";
-import { padCik, parsePeriodicFilings, parseTickerExchangeFile } from "./parse";
+import { issuerProfile, padCik, parsePeriodicFilings, parseTickerExchangeFile } from "./parse";
 
 export const SEC_EDGAR: ProviderDescriptor = {
   key: "sec-edgar",
@@ -76,7 +76,9 @@ export const secEdgarFilings: FilingsProvider = {
     if (!parsed.success) throw new ProviderError(SEC_EDGAR.key, "PARSE_ERROR", "Unexpected submissions format", res.status, res.endpoint);
     return {
       filings: parsePeriodicFilings(parsed.data),
+      profile: issuerProfile(parsed.data),
       meta: { endpoint: res.endpoint, httpStatus: res.status, payloadHash: res.payloadHash, fetchedAt: new Date().toISOString() },
     };
   },
 };
+
