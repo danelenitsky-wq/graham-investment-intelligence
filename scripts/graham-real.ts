@@ -75,7 +75,7 @@ async function main() {
     }
     const g = an.graham;
     const years = an.annual.map((x) => x.fiscalYear);
-    out(`  issuer: ${g.classification.industryClass} (${g.classification.basis}${g.classification.sicCode ? ` SIC ${g.classification.sicCode}` : ""}) · FY${years[0]}–FY${years[years.length - 1]} (${years.length} years) · price ${an.price ? `${an.price.value} ${an.price.currency} ${an.price.date} [${an.price.status}]` : "—"}`);
+    out(`  issuer: ${g.classification.industryClass} (${g.classification.basis}${g.classification.sicCode ? ` ${g.classification.sicCode}` : ""}) · FY${years[0]}–FY${years[years.length - 1]} (${years.length} years) · price ${an.price ? `${an.price.value} ${an.price.currency} ${an.price.date} [${an.price.status}]` : "—"}`);
     out(`  dividends stored: ${an.dividends.length ? `${an.dividends[0].exDate} → ${an.dividends[an.dividends.length - 1].exDate}` : "none"} · excluded distributions: ${g.excludedDistributions.map((x) => `${x.exDate} ${x.amount}`).join(", ") || "none"}`);
     for (const s of [g.defensive, g.enterprising, g.netNet.screen]) {
       out(`  ${s.screen}: ${s.outcome} (${s.ruleSet}) — pass ${s.passed}, fail ${s.failed}, insufficient ${s.insufficient}, n/a ${s.notApplicable}`);

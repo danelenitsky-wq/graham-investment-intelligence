@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { CONCEPTS, type CanonicalConcept } from "@/lib/normalization/concepts";
 import type { NormalizedAnnualPeriod, SplitEvent } from "@/lib/normalization/statements";
@@ -238,6 +239,9 @@ async function recordNormalizationWarnings(securityId: string, sourceId: string,
 
 // ──────────────────────────────── Refresh ────────────────────────────────
 
+/** Fingerprint of the XBRL → canonical concept mapping (part of the fundamentals input hash). */
+const CONCEPT_MAPPING_HASH = createHash("sha256").update(JSON.stringify(CONCEPTS)).digest("hex").slice(0, 12);
+
 export type DatasetOutcome = { status: "SUCCESS" | "UNCHANGED" | "FAILED" | "SKIPPED"; count?: number; error?: string; code?: string };
 
 export interface RefreshOutcome {
@@ -316,7 +320,8 @@ export async function refreshFundamentals(securityId: string, splits?: SplitEven
   try {
     const { result, quarterly, meta } = await fundamentalsProvider.getAnnualFinancials(ref, { splits });
     // The split list is part of the input: a new split changes per-share values even when the filing payload did not change.
-    const inputHash = meta.payloadHash ? `${meta.payloadHash}|splits:${JSON.stringify(splits ?? [])}` : null;
+    // So is the concept mapping: adding a canonical concept must re-normalize stored filings.
+    const inputHash = meta.payloadHash ? `${meta.payloadHash}|splits:${JSON.stringify(splits ?? [])}|concepts:${CONCEPT_MAPPING_HASH}` : null;
     const unchanged = inputHash !== null && inputHash === previousHash;
     const provenance = { cik: ref.cik, retrievedAt: new Date(meta.fetchedAt) };
     if (!unchanged) {
