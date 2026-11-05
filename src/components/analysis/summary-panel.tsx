@@ -29,9 +29,9 @@ export function SummaryPanel({ a, dict, locale, gated = false }: { a: SecurityAn
             <PriceChart
               data={a.priceHistory}
               currency={a.price?.currency ?? currency}
-              overlays={a.valuation.estimates
-                .filter((e) => e.status === "OK" && e.value !== null && e.id !== "graham.ncav")
-                .map((e) => ({ label: (dict.valuation.estimates as Record<string, { title: string }>)[e.id]?.title ?? e.id, value: e.value! }))}
+              overlays={(["defensive", "enterprising", "netNet"] as const)
+                .map((k) => ({ label: dict.valuationDashboard.cards[k], value: a.valuationDashboard[k].ceiling.value }))
+                .filter((o): o is { label: string; value: number } => o.value !== null)}
             />
           ) : (
             <EmptyState title={dict.stock.noPrice} body={dict.stock.noPriceHint} />

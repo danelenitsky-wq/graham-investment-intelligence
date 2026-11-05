@@ -1,3 +1,4 @@
+import { valuationEn } from "./valuation-en";
 import { grahamEn } from "./graham-en";
 /** English dictionary. The Hebrew dictionary must have the same shape (enforced by type). */
 export const en = {
@@ -519,11 +520,19 @@ export const en = {
     methodology: "Methodology",
     enterprisingLookbackYears: "Enterprising earnings-growth lookback (years)",
     priceHistoryYears: "Price history to fetch (years)",
+    valuation: "Valuation assumptions",
+    valuationNote: "Application assumptions, not Graham rules. Each can also be changed on the valuation page.",
+    marginOfSafetyTarget: "Margin-of-safety target (%)",
+    intrinsicEnabled: "Compute the optional intrinsic value",
+    discountRate: "Discount rate (%)",
+    terminalGrowth: "Terminal growth (%)",
+    normalizationYears: "Earnings normalization (years)",
     providers: "API keys",
     providersNote: "API keys are read from server environment variables only and are never sent to the browser.",
     invalid: "Some values are invalid.",
   },
   graham: grahamEn,
+  valuationDashboard: valuationEn,
 };
 
 type Widen<T> = T extends string ? string : T extends readonly (infer U)[] ? readonly Widen<U>[] : { [K in keyof T]: Widen<T[K]> };

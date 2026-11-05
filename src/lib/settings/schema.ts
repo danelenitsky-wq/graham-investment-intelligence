@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { DEFAULT_FRESHNESS } from "@/lib/freshness";
 import { ENTERPRISING_THRESHOLDS } from "@/lib/graham/rules";
+import { DEFAULT_MARGIN_OF_SAFETY_TARGET } from "@/lib/valuation/engine";
+import { INTRINSIC_DEFAULTS, INTRINSIC_LIMITS } from "@/lib/valuation/intrinsic";
 
 /** A macro input the user typed in, with its provenance. */
 export const manualValueSchema = z.object({
@@ -26,6 +28,26 @@ export const settingsSchema = z.object({
   enterprisingLookbackYears: z.number().int().min(1).max(10).default(ENTERPRISING_THRESHOLDS.earningsGrowthLookbackYears),
   /** 22 years so that the 20-fiscal-year dividend record (D4) can be fully covered by daily history. */
   priceHistoryYears: z.number().int().min(1).max(40).default(22),
+  /**
+   * Valuation assumptions. These are APPLICATION ASSUMPTIONS, not Graham rules:
+   * the 30% margin-of-safety target and the intrinsic-value model defaults can
+   * all be changed here and per page.
+   */
+  valuation: z
+    .object({
+      marginOfSafetyTarget: z.number().min(0).max(0.9),
+      intrinsicEnabled: z.boolean(),
+      discountRate: z.number().min(INTRINSIC_LIMITS.discountRate[0]).max(INTRINSIC_LIMITS.discountRate[1]),
+      terminalGrowth: z.number().min(INTRINSIC_LIMITS.terminalGrowth[0]).max(INTRINSIC_LIMITS.terminalGrowth[1]),
+      normalizationYears: z.number().int().min(INTRINSIC_LIMITS.normalizationYears[0]).max(INTRINSIC_LIMITS.normalizationYears[1]),
+    })
+    .default({
+      marginOfSafetyTarget: DEFAULT_MARGIN_OF_SAFETY_TARGET,
+      intrinsicEnabled: true,
+      discountRate: INTRINSIC_DEFAULTS.discountRate,
+      terminalGrowth: INTRINSIC_DEFAULTS.terminalGrowth,
+      normalizationYears: INTRINSIC_DEFAULTS.normalizationYears,
+    }),
 });
 export type AppSettings = z.infer<typeof settingsSchema>;
 export const SETTINGS_KEY = "app";

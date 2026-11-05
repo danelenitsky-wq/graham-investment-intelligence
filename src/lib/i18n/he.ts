@@ -1,3 +1,4 @@
+import { valuationHe } from "./valuation-he";
 import { grahamHe } from "./graham-he";
 import type { Dictionary } from "./en";
 
@@ -519,9 +520,17 @@ export const he: Dictionary = {
     methodology: "מתודולוגיה",
     enterprisingLookbackYears: "תקופת השוואת צמיחה למשקיע היוזם (שנים)",
     priceHistoryYears: "היסטוריית מחירים לטעינה (שנים)",
+    valuation: "הנחות הערכת שווי",
+    valuationNote: "הנחות יישום, לא כללי גרהם. ניתן לשנות כל אחת מהן גם בדף הערכת השווי.",
+    marginOfSafetyTarget: "יעד מרווח ביטחון (%)",
+    intrinsicEnabled: "חישוב השווי הפנימי האופציונלי",
+    discountRate: "שיעור היוון (%)",
+    terminalGrowth: "צמיחה פרמננטית (%)",
+    normalizationYears: "נרמול רווחים (שנים)",
     providers: "מפתחות API",
     providersNote: "מפתחות API נקראים ממשתני סביבה בשרת בלבד ולעולם אינם נשלחים לדפדפן.",
     invalid: "חלק מהערכים אינם תקינים.",
   },
   graham: grahamHe,
+  valuationDashboard: valuationHe,
 };

@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useI18n } from "@/components/layout/providers";
@@ -10,7 +10,18 @@ type Range = "1Y" | "5Y" | "10Y" | "MAX";
 const YEARS: Record<Range, number | null> = { "1Y": 1, "5Y": 5, "10Y": 10, MAX: null };
 
 /** Interactive closing-price chart. Charts always run left→right (time axis), even in RTL. */
-export function PriceChart({ data, currency, overlays = [] }: { data: { date: string; close: number }[]; currency: string; overlays?: { label: string; value: number }[] }) {
+/** `overlays` are listed under the chart; with `drawOverlays` they are also drawn as horizontal reference lines. */
+export function PriceChart({
+  data,
+  currency,
+  overlays = [],
+  drawOverlays = false,
+}: {
+  data: { date: string; close: number }[];
+  currency: string;
+  overlays?: { label: string; value: number; color?: string }[];
+  drawOverlays?: boolean;
+}) {
   const { locale, dict } = useI18n();
   const [range, setRange] = useState<Range>("5Y");
   const filtered = useMemo(() => {
@@ -72,13 +83,16 @@ export function PriceChart({ data, currency, overlays = [] }: { data: { date: st
               formatter={(v) => [formatCurrency(locale, Number(v), currency), dict.common.close]}
             />
             <Area type="monotone" dataKey="close" stroke="var(--color-chart-1)" strokeWidth={1.6} fill="url(#priceFill)" isAnimationActive={false} />
+            {drawOverlays &&
+              overlays.map((o) => <ReferenceLine key={o.label} y={o.value} stroke={o.color ?? "var(--color-chart-2)"} strokeDasharray="6 4" strokeWidth={1.4} ifOverflow="extendDomain" />)}
           </AreaChart>
         </ResponsiveContainer>
       </div>
       {overlays.length > 0 && (
         <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
           {overlays.map((o) => (
-            <span key={o.label}>
+            <span key={o.label} className="flex items-center gap-1">
+              {drawOverlays && <span className="inline-block h-0.5 w-4" style={{ background: o.color ?? "var(--color-chart-2)" }} />}
               {o.label}: <bdi dir="ltr" className="num font-mono text-foreground">{formatCurrency(locale, o.value, currency)}</bdi>
             </span>
           ))}

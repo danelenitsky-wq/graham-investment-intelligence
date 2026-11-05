@@ -82,6 +82,30 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
           </CardContent>
         </Card>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>{dict.settings.valuation}</CardTitle>
+          <CardDescription>{dict.settings.valuationNote}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Field label={dict.settings.marginOfSafetyTarget}>
+            <Input name="marginOfSafetyTarget" type="number" min="0" max="90" step="1" required defaultValue={Math.round(settings.valuation.marginOfSafetyTarget * 100)} dir="ltr" />
+          </Field>
+          <Field label={dict.settings.discountRate}>
+            <Input name="discountRate" type="number" min="4" max="25" step="0.1" required defaultValue={+(settings.valuation.discountRate * 100).toFixed(2)} dir="ltr" />
+          </Field>
+          <Field label={dict.settings.terminalGrowth}>
+            <Input name="terminalGrowth" type="number" min="-2" max="4" step="0.1" required defaultValue={+(settings.valuation.terminalGrowth * 100).toFixed(2)} dir="ltr" />
+          </Field>
+          <Field label={dict.settings.normalizationYears}>
+            <Input name="normalizationYears" type="number" min="3" max="10" step="1" required defaultValue={settings.valuation.normalizationYears} dir="ltr" />
+          </Field>
+          <label className="col-span-2 flex items-center gap-2 text-sm md:col-span-4">
+            <input type="checkbox" name="intrinsicEnabled" defaultChecked={settings.valuation.intrinsicEnabled} className="size-4 accent-primary" />
+            {dict.settings.intrinsicEnabled}
+          </label>
+        </CardContent>
+      </Card>
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={pending}>
           {pending ? <Loader2 className="animate-spin" /> : <Save />} {dict.common.save}

@@ -17,6 +17,8 @@ import type { CanonicalConcept } from "@/lib/normalization/concepts";
 import type { AnnualFinancials } from "@/lib/normalization/statements";
 import { valueWithGraham, VALUATION_ENGINE_VERSION, type GrahamValuation, type ValueEstimate } from "@/lib/valuation/graham";
 import { bondYieldAdjustedFormula, modernMetrics, type ModernMetrics } from "@/lib/valuation/modern";
+import { buildValuationDashboard, resolvePriceContext, type ValuationDashboard } from "@/lib/valuation/engine";
+import { buildIntrinsicBase, computeIntrinsicValue, defaultAssumptions, type AssumptionDefaults, type IntrinsicBase, type IntrinsicResult } from "@/lib/valuation/intrinsic";
 import type { AppSettings } from "@/lib/settings/schema";
 import { evaluateDataSufficiency, type GateResult } from "@/lib/freshness/gate";
 import { filingUrl } from "@/lib/providers/sec-edgar/parse";
@@ -132,11 +134,15 @@ export interface SecurityAnalysis {
   graham: GrahamAnalysis;
   valuation: GrahamValuation;
   modern: { bondYieldAdjusted: ValueEstimate; metrics: ModernMetrics };
+  /** Price ceilings, Graham Number, Net-Net threshold, compared with the price (and its basis). */
+  valuationDashboard: ValuationDashboard;
+  /** Optional conservative intrinsic value (MODERN EXTENSION) with its base data and default assumptions. */
+  intrinsic: { base: IntrinsicBase; defaults: AssumptionDefaults; result: IntrinsicResult };
   freshness: FreshnessReport;
   decision: DecisionResult;
   fetches: { dataset: string; status: string; sourceKey: string; startedAt: string; completedAt: string | null; errorMessage: string | null }[];
   issues: { severity: string; code: string; message: string; detectedAt: string }[];
-  settings: Pick<AppSettings, "aaaBondYield" | "currentCpi">;
+  settings: Pick<AppSettings, "aaaBondYield" | "currentCpi" | "valuation">;
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -290,6 +296,27 @@ export async function getSecurityAnalysis(
   };
 
   const today = iso(new Date());
+  const valuationDashboard = buildValuationDashboard({
+    graham,
+    currency: lastCurrency ?? null,
+    price: resolvePriceContext({
+      quote: price
+        ? { value: price.value, currency: price.currency, date: price.date, timestamp: price.sourceTimestamp, source: quote.provider?.name ?? price.sourceKey, quoteStatus: price.status }
+        : null,
+      storedClose: lastBar ? { value: Number(lastBar.close), date: iso(lastBar.date), currency: lastBar.currency, source: lastBar.source.name } : null,
+      statementCurrency: lastCurrency ?? null,
+      today,
+      staleAfterDays: settings.freshness.priceStaleDays,
+    }),
+  });
+  const intrinsicBase = buildIntrinsicBase(annual, graham.classification.industryClass);
+  const intrinsicDefaults = defaultAssumptions(intrinsicBase, {
+    enabled: settings.valuation.intrinsicEnabled,
+    discountRate: settings.valuation.discountRate,
+    terminalGrowth: settings.valuation.terminalGrowth,
+    normalizationYears: settings.valuation.normalizationYears,
+  });
+  const intrinsic = { base: intrinsicBase, defaults: intrinsicDefaults, result: computeIntrinsicValue(intrinsicBase, intrinsicDefaults.assumptions) };
   const fundamentalsFixture = provenance.some((p) => p.isDevFixture);
   const freshness: FreshnessReport = {
     prices: priceFreshness(price?.date ?? null, today, price?.isDevFixture ?? false, settings.freshness),
@@ -418,6 +445,8 @@ export async function getSecurityAnalysis(
     graham,
     valuation,
     modern,
+    valuationDashboard,
+    intrinsic,
     freshness,
     decision: evaluateDecision({ defensive, enterprising, valuation, freshness }),
     fetches: fetches.map((f) => ({
@@ -429,7 +458,7 @@ export async function getSecurityAnalysis(
       errorMessage: f.errorMessage,
     })),
     issues: issues.map((i) => ({ severity: i.severity, code: i.code, message: i.message, detectedAt: i.detectedAt.toISOString() })),
-    settings: { aaaBondYield: settings.aaaBondYield, currentCpi: settings.currentCpi },
+    settings: { aaaBondYield: settings.aaaBondYield, currentCpi: settings.currentCpi, valuation: settings.valuation },
   };
 }
 
