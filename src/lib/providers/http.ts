@@ -17,6 +17,11 @@ export function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
+/** Short, credential-scrubbed excerpt of an error body (long tokens are masked). */
+export function bodySnippet(text: string): string {
+  return text.replace(/[A-Za-z0-9_-]{24,}/g, "***").replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
 export interface HttpResult {
   status: number;
   text: string;
@@ -40,8 +45,10 @@ export async function httpGet(
       const res = await fetch(url, { headers: init.headers, signal: controller.signal, cache: "no-store" });
       const text = await res.text();
       if (res.status === 404) throw new ProviderError(provider, "NOT_FOUND", `Not found: ${endpoint}`, 404, endpoint);
+      if (res.status === 402)
+        throw new ProviderError(provider, "NOT_ENTITLED", `Endpoint not included in the current subscription (402). ${bodySnippet(text)}`, 402, endpoint);
       if (res.status === 401 || res.status === 403)
-        throw new ProviderError(provider, "HTTP_ERROR", `Access denied (${res.status}). Check credentials / User-Agent.`, res.status, endpoint);
+        throw new ProviderError(provider, "HTTP_ERROR", `Access denied (${res.status}). Check credentials / plan / User-Agent. ${bodySnippet(text)}`, res.status, endpoint);
       if (res.status === 429 || res.status >= 500) {
         lastError = new ProviderError(provider, res.status === 429 ? "RATE_LIMITED" : "HTTP_ERROR", `HTTP ${res.status}`, res.status, endpoint);
         await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));

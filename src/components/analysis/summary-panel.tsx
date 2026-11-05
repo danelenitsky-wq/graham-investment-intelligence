@@ -8,7 +8,7 @@ import type { Dictionary, Locale } from "@/lib/i18n";
 import type { SecurityAnalysis } from "@/server/analysis";
 import { averageEps, bookValuePerShare, currentRatio, latest, ncavPerShare } from "@/lib/graham/metrics";
 
-export function SummaryPanel({ a, dict, locale }: { a: SecurityAnalysis; dict: Dictionary; locale: Locale }) {
+export function SummaryPanel({ a, dict, locale, gated = false }: { a: SecurityAnalysis; dict: Dictionary; locale: Locale; gated?: boolean }) {
   const last = latest(a.annual);
   const currency = last?.currency ?? a.price?.currency ?? "USD";
   const price = a.valuation.price;
@@ -63,7 +63,7 @@ export function SummaryPanel({ a, dict, locale }: { a: SecurityAnalysis; dict: D
               <CardHeader>
                 <CardTitle>{title as string}</CardTitle>
                 <CardDescription>
-                  <ScreenSummary screen={screen} dict={dict} />
+                  {gated ? <span className="font-semibold text-negative">{dict.health.insufficient}</span> : <ScreenSummary screen={screen} dict={dict} />}
                 </CardDescription>
               </CardHeader>
               <CardContent>

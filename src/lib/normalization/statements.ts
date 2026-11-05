@@ -28,6 +28,8 @@ export interface NormalizedValue {
 
 export interface NormalizedAnnualPeriod {
   fiscalYear: number;
+  /** "FY" for annual periods, "Q1".."Q4" for quarters. */
+  fiscalPeriod?: string;
   periodStart: string | null;
   periodEnd: string;
   currency: string;
@@ -76,6 +78,12 @@ export function fiscalYearFromPeriodEnd(periodEnd: string): number {
   return y;
 }
 
+function quarterLabel(end: string, original: SecFact | undefined, quarterly: boolean): { fiscalYear: number; fiscalPeriod: string } {
+  if (!quarterly) return { fiscalYear: fiscalYearFromPeriodEnd(end), fiscalPeriod: "FY" };
+  const fp = original?.fp && /^Q[1-4]$/.test(original.fp) ? original.fp : original?.fp === "FY" ? "Q4" : "Q?";
+  return { fiscalYear: original?.fy ?? fiscalYearFromPeriodEnd(end), fiscalPeriod: fp };
+}
+
 function splitTag(tag: string): [string, string] {
   const i = tag.indexOf(":");
   return [tag.slice(0, i), tag.slice(i + 1)];
@@ -120,7 +128,33 @@ export interface NormalizeOptions {
   splits?: SplitEvent[];
 }
 
+export const QUARTERLY_FORMS = new Set(["10-Q", "10-Q/A", ...ANNUAL_FORMS]);
+const MIN_QUARTER_DAYS = 80;
+const MAX_QUARTER_DAYS = 100;
+
+interface PeriodSpec {
+  forms: Set<string>;
+  minDays: number;
+  maxDays: number;
+  quarterly: boolean;
+}
+const ANNUAL_SPEC: PeriodSpec = { forms: ANNUAL_FORMS, minDays: MIN_ANNUAL_DAYS, maxDays: MAX_ANNUAL_DAYS, quarterly: false };
+const QUARTER_SPEC: PeriodSpec = { forms: QUARTERLY_FORMS, minDays: MIN_QUARTER_DAYS, maxDays: MAX_QUARTER_DAYS, quarterly: true };
+
 export function normalizeCompanyFacts(facts: CompanyFacts, options: NormalizeOptions = {}): NormalizationResult {
+  return normalizeWithSpec(facts, options, ANNUAL_SPEC);
+}
+
+/**
+ * Discrete three-month quarters as reported in 10-Q (and, when an issuer
+ * reports them, 10-K) filings. Fourth quarters are only present when the
+ * issuer reported a three-month Q4 figure; they are never derived as FY − 9M.
+ */
+export function normalizeQuarterlyFacts(facts: CompanyFacts, options: NormalizeOptions = {}): NormalizationResult {
+  return normalizeWithSpec(facts, options, QUARTER_SPEC);
+}
+
+function normalizeWithSpec(facts: CompanyFacts, options: NormalizeOptions, spec: PeriodSpec): NormalizationResult {
   const warnings: NormalizationWarning[] = [];
   const { currency, all } = detectReportingCurrency(facts);
 
@@ -141,6 +175,8 @@ export function normalizeCompanyFacts(facts: CompanyFacts, options: NormalizeOpt
 
   // 1) Collect annual duration periods (keyed by end date) from flow concepts.
   const periodStarts = new Map<string, string>();
+  // Earliest-filed fact per period end: its fy/fp describe that period (later comparatives carry the later filing's fy/fp).
+  const originalFact = new Map<string, SecFact>();
   for (const concept of CANONICAL_CONCEPTS) {
     const def = CONCEPTS[concept];
     if (def.instant) continue;
@@ -150,17 +186,19 @@ export function normalizeCompanyFacts(facts: CompanyFacts, options: NormalizeOpt
       for (const [unitKey, arr] of Object.entries(units)) {
         if (!unitMatches(unitKey, def.unit, currency)) continue;
         for (const f of arr) {
-          if (!ANNUAL_FORMS.has(f.form) || !f.start) continue;
+          if (!spec.forms.has(f.form) || !f.start) continue;
           const days = daysBetween(f.start, f.end);
-          if (days < MIN_ANNUAL_DAYS || days > MAX_ANNUAL_DAYS) continue;
+          if (days < spec.minDays || days > spec.maxDays) continue;
           if (!periodStarts.has(f.end)) periodStarts.set(f.end, f.start);
+          const o = originalFact.get(f.end);
+          if (!o || f.filed < o.filed) originalFact.set(f.end, f);
         }
       }
     }
   }
 
   if (periodStarts.size === 0) {
-    warnings.push({ code: "NO_ANNUAL_DATA", message: "No annual (10-K / 20-F) financial facts found." });
+    if (!spec.quarterly) warnings.push({ code: "NO_ANNUAL_DATA", message: "No annual (10-K / 20-F) financial facts found." });
     return { entityName: facts.entityName, currency, periods: [], warnings };
   }
 
@@ -168,7 +206,7 @@ export function normalizeCompanyFacts(facts: CompanyFacts, options: NormalizeOpt
   const periods: NormalizedAnnualPeriod[] = [...periodStarts.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([end, start]) => ({
-      fiscalYear: fiscalYearFromPeriodEnd(end),
+      ...quarterLabel(end, originalFact.get(end), spec.quarterly),
       periodStart: start,
       periodEnd: end,
       currency: currency ?? "USD",
@@ -186,7 +224,7 @@ export function normalizeCompanyFacts(facts: CompanyFacts, options: NormalizeOpt
         for (const [unitKey, arr] of Object.entries(units)) {
           if (!unitMatches(unitKey, def.unit, currency)) continue;
           for (const f of arr) {
-            if (!ANNUAL_FORMS.has(f.form)) continue;
+            if (!spec.forms.has(f.form)) continue;
             if (def.instant) {
               if (f.start) continue;
               if (tax === "dei") {
@@ -196,7 +234,7 @@ export function normalizeCompanyFacts(facts: CompanyFacts, options: NormalizeOpt
             } else {
               if (!f.start || f.end !== period.periodEnd) continue;
               const days = daysBetween(f.start, f.end);
-              if (days < MIN_ANNUAL_DAYS || days > MAX_ANNUAL_DAYS) continue;
+              if (days < spec.minDays || days > spec.maxDays) continue;
             }
             matches.push({ fact: f, unitKey });
           }
@@ -228,6 +266,8 @@ export function normalizeCompanyFacts(facts: CompanyFacts, options: NormalizeOpt
       }
     }
   }
+
+  if (spec.quarterly) return { entityName: facts.entityName, currency, periods, warnings: [] };
 
   // 3) Warnings about history quality.
   const years = periods.map((p) => p.fiscalYear);

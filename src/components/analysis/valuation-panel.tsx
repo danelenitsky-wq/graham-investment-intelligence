@@ -10,7 +10,7 @@ import { MetricRow } from "@/components/finance/metric-card";
 import { MEASURE_FORMAT } from "@/components/finance/metric-formats";
 import { Num, signTone } from "@/components/finance/num";
 
-function EstimateCard({ e, a, dict, locale, currency }: { e: ValueEstimate; a: SecurityAnalysis; dict: Dictionary; locale: Locale; currency: string }) {
+function EstimateCard({ e, a, dict, locale, currency, gated }: { e: ValueEstimate; a: SecurityAnalysis; dict: Dictionary; locale: Locale; currency: string; gated: boolean }) {
   const meta = (dict.valuation.estimates as Record<string, { title: string; formula: string }>)[e.id] ?? { title: e.id, formula: "" };
   const mos = e.status === "OK" && e.id !== "modern.bondYieldAdjusted" ? a.valuation.marginsOfSafety[e.id] : null;
   const modernMos = e.id === "modern.bondYieldAdjusted" && e.status === "OK" && a.valuation.price !== null && e.value ? (e.value - a.valuation.price) / e.value : null;
@@ -31,7 +31,9 @@ function EstimateCard({ e, a, dict, locale, currency }: { e: ValueEstimate; a: S
       </div>
       <div className="flex items-baseline justify-between gap-2">
         <Num className="text-2xl font-semibold">{formatCurrency(locale, e.value, currency)}</Num>
-        {margin !== null && (
+        {gated ? (
+          <span className="text-xs font-semibold text-negative">{dict.health.insufficient}</span>
+        ) : margin !== null && (
           <span className="text-xs text-muted-foreground">
             {dict.metrics.marginOfSafety}: <Num tone={signTone(margin)}>{formatPercent(locale, margin)}</Num>
           </span>
@@ -57,7 +59,21 @@ function EstimateCard({ e, a, dict, locale, currency }: { e: ValueEstimate; a: S
 }
 
 /** Valuation view (Graham 1973 + clearly separated modern extensions). `action` is the URL the growth form submits to. */
-export function ValuationPanel({ a, dict, locale, action, hidden }: { a: SecurityAnalysis; dict: Dictionary; locale: Locale; action: string; hidden?: Record<string, string> }) {
+export function ValuationPanel({
+  a,
+  dict,
+  locale,
+  action,
+  hidden,
+  gated = false,
+}: {
+  a: SecurityAnalysis;
+  dict: Dictionary;
+  locale: Locale;
+  action: string;
+  hidden?: Record<string, string>;
+  gated?: boolean;
+}) {
   const currency = a.annual[a.annual.length - 1]?.currency ?? a.price?.currency ?? "USD";
   const m = a.modern.metrics;
   return (
@@ -85,7 +101,7 @@ export function ValuationPanel({ a, dict, locale, action, hidden }: { a: Securit
           </form>
           <div className="grid gap-3 md:grid-cols-3">
             {a.valuation.estimates.map((e) => (
-              <EstimateCard key={e.id} e={e} a={a} dict={dict} locale={locale} currency={currency} />
+              <EstimateCard key={e.id} e={e} a={a} dict={dict} locale={locale} currency={currency} gated={gated} />
             ))}
           </div>
         </CardContent>
@@ -99,7 +115,7 @@ export function ValuationPanel({ a, dict, locale, action, hidden }: { a: Securit
           <CardDescription>{dict.valuation.modernNote}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-          <EstimateCard e={a.modern.bondYieldAdjusted} a={a} dict={dict} locale={locale} currency={currency} />
+          <EstimateCard e={a.modern.bondYieldAdjusted} a={a} dict={dict} locale={locale} currency={currency} gated={gated} />
           <div className="rounded-xl border bg-card p-4">
             <MetricRow label={dict.metrics.freeCashFlow} value={m.freeCashFlow} format="compactCurrency" currency={currency} locale={locale} toneBySign />
             <MetricRow label={dict.metrics.freeCashFlowPerShare} value={m.freeCashFlowPerShare} format="currency" currency={currency} locale={locale} />

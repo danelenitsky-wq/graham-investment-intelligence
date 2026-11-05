@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/finance/page-header";
 import { SecurityPickerPage } from "@/components/analysis/security-picker-page";
 import { ValuationPanel } from "@/components/analysis/valuation-panel";
+import { InsufficientDataBanner } from "@/components/finance/badges";
 import { resolveLocale } from "@/lib/i18n/server";
 import { href } from "@/lib/i18n/paths";
 
@@ -16,7 +17,12 @@ export default async function ValuationPage({ params, searchParams }: PageProps<
         basePath={base}
         searchParams={searchParams}
         pickText={dict.valuation.pick}
-        render={(a) => <ValuationPanel a={a} dict={dict} locale={locale} action={base} hidden={{ s: `${a.security.exchangeCode}:${a.security.ticker}` }} />}
+        render={(a) => (
+          <div className="flex flex-col gap-5">
+            {!a.health.gate.sufficient && <InsufficientDataBanner dict={dict} />}
+            <ValuationPanel a={a} dict={dict} locale={locale} action={base} hidden={{ s: `${a.security.exchangeCode}:${a.security.ticker}` }} gated={!a.health.gate.sufficient} />
+          </div>
+        )}
       />
     </>
   );

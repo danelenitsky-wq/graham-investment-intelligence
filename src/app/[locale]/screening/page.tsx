@@ -36,7 +36,8 @@ async function Results({ locale, dict, searchParams }: { locale: Locale; dict: D
   if (!ids.length) return <EmptyState title={dict.screening.empty} />;
   const analyses = (await Promise.all(ids.map((i) => getSecurityAnalysis(i.id)))).filter((a) => a !== null);
   const rows = analyses
-    .filter((a) => filter === "all" || a.defensive.outcome === "MEETS_ALL")
+    // A screen result is only a conclusion when the data behind it passed the sufficiency gate.
+    .filter((a) => filter === "all" || (a.defensive.outcome === "MEETS_ALL" && a.health.gate.sufficient))
     .sort((x, y) => y.defensive.passed - x.defensive.passed || y.enterprising.passed - x.enterprising.passed);
   const base = href(locale, "/screening");
   return (
@@ -76,6 +77,11 @@ async function Results({ locale, dict, searchParams }: { locale: Locale; dict: D
                       <span className="max-w-56 truncate text-muted-foreground">{locale === "he" && a.security.nameHe ? a.security.nameHe : a.security.name}</span>
                       {a.freshness.usesDevFixtureData && <DevFixtureBadge dict={dict} />}
                     </Link>
+                    {!a.health.gate.sufficient && (
+                      <Badge variant="negative" className="mt-1 font-normal">
+                        {dict.health.insufficient}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">

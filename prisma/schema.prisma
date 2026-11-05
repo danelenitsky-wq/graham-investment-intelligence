@@ -70,6 +70,12 @@ model Security {
   reportingCurrency  String? // currency of financial statements
   fiscalYearEndMonth Int? // 1-12
   isActive           Boolean   @default(true)
+  // Daily check for newly published periodic reports (SEC submissions).
+  lastFilingCheckAt      DateTime?
+  latestFilingAccession  String?
+  latestFilingForm       String?
+  latestFilingDate       DateTime? @db.Date
+  latestFilingAcceptedAt DateTime?
   // Where the reference record itself came from.
   sourceId           String?
   source             DataSource? @relation(fields: [sourceId], references: [id])
@@ -84,6 +90,8 @@ model Security {
   alerts           Alert[]
   fetches          DataFetch[]
   qualityIssues    DataQualityIssue[]
+  quotes           QuoteSnapshot[]
+  verifications    DataVerification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -121,6 +129,7 @@ model DataSource {
   corporateActions CorporateAction[]
   statements       FinancialStatement[]
   qualityIssues    DataQualityIssue[]
+  quotes           QuoteSnapshot[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -153,6 +162,7 @@ model DataFetch {
   priceBars        PriceBar[]
   corporateActions CorporateAction[]
   statements       FinancialStatement[]
+  quotes           QuoteSnapshot[]
 
   @@index([sourceId, startedAt])
   @@index([securityId, dataset, startedAt])
@@ -242,6 +252,13 @@ enum PeriodType {
   TTM
 }
 
+enum VerificationStatus {
+  UNVERIFIED // not checked yet
+  VERIFIED // an independent source agrees within tolerance
+  CONFLICT // an independent source disagrees beyond tolerance
+  SINGLE_SOURCE // no independent value available to compare
+}
+
 model FinancialStatement {
   id              String          @id @default(cuid())
   securityId      String
@@ -282,8 +299,86 @@ model FinancialLineItem {
   unit          String // USD, shares, USD/shares
   accessionNumber String?
   filedAt       DateTime?          @db.Date
+  splitAdjusted Boolean            @default(false)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
 
   @@unique([statementId, concept])
+}
+
+// ──────────────────────────────── Quotes ─────────────────────────────────────
+
+enum QuoteFeed {
+  REALTIME // provider documents real-time delivery for the configured plan
+  DELAYED
+  EOD
+  UNKNOWN // not confirmed: never shown as Live
+}
+
+// Every successful quote retrieval is kept (append-only), so the last verified
+// value survives provider outages and every displayed price is auditable.
+model QuoteSnapshot {
+  id                 String             @id @default(cuid())
+  securityId         String
+  security           Security           @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  sourceId           String
+  source             DataSource         @relation(fields: [sourceId], references: [id])
+  fetchId            String?
+  fetch              DataFetch?         @relation(fields: [fetchId], references: [id], onDelete: SetNull)
+  price              Decimal            @db.Decimal(20, 6)
+  previousClose      Decimal?           @db.Decimal(20, 6)
+  change             Decimal?           @db.Decimal(20, 6)
+  changePercent      Float?
+  open               Decimal?           @db.Decimal(20, 6)
+  dayHigh            Decimal?           @db.Decimal(20, 6)
+  dayLow             Decimal?           @db.Decimal(20, 6)
+  volume             BigInt?
+  marketCap          Decimal?           @db.Decimal(24, 2)
+  yearHigh           Decimal?           @db.Decimal(20, 6)
+  yearLow            Decimal?           @db.Decimal(20, 6)
+  currency           String
+  exchange           String?
+  feed               QuoteFeed
+  feedNote           String?
+  delayMinutes       Int?
+  sourceTimestamp    DateTime // provider's trade/quote time
+  retrievedAt        DateTime           @default(now()) // when we received it
+  sessionState       String // OPEN / CLOSED / UNKNOWN at retrieval (cache invalidation)
+  sessionDate        String // exchange-local YYYY-MM-DD at retrieval
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  verificationNote   String?
+  payloadHash        String?
+
+  @@index([securityId, retrievedAt])
+}
+
+// ───────────────────────────── Verification ──────────────────────────────────
+
+// One comparison of a material figure between the primary source and an
+// independent one. Open (unresolved) CONFLICT rows block downstream analysis.
+model DataVerification {
+  id                 String             @id @default(cuid())
+  securityId         String
+  security           Security           @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  dataset            String // "financials" | "quote"
+  metric             String
+  periodType         PeriodType?
+  fiscalYear         Int?
+  fiscalPeriod       String?
+  periodEnd          DateTime?          @db.Date
+  primarySource      String
+  primaryValue       Decimal?           @db.Decimal(30, 6)
+  primaryReference   String?
+  secondarySource    String
+  secondaryValue     Decimal?           @db.Decimal(30, 6)
+  secondaryReference String?
+  relDiff            Float?
+  tolerance          Float?
+  status             VerificationStatus
+  checkedAt          DateTime           @default(now())
+  resolvedAt         DateTime? // superseded by a later check
+
+  @@index([securityId, dataset, resolvedAt])
+  @@index([securityId, status])
 }
 
 // ─────────────────────────────── Analysis ────────────────────────────────────

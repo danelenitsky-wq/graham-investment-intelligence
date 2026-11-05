@@ -3,9 +3,11 @@
  * these interfaces; the rest of the platform depends only on the contracts.
  */
 import type { NormalizationResult, SplitEvent } from "@/lib/normalization/statements";
+import type { QuoteFeed } from "@/lib/freshness/quote";
+import type { SourcedPeriod } from "@/lib/verification";
 import type { BarRejection, NormalizedDividend, NormalizedPriceBar, NormalizedSplit } from "@/lib/normalization/market";
 
-export type ProviderCapability = "REFERENCE" | "FUNDAMENTALS" | "PRICES";
+export type ProviderCapability = "REFERENCE" | "FUNDAMENTALS" | "PRICES" | "QUOTES" | "FILINGS" | "VERIFICATION";
 export type MarketCode = "US" | "IL";
 
 export interface ProviderDescriptor {
@@ -57,7 +59,60 @@ export interface FundamentalsProvider {
   getAnnualFinancials(
     security: SecurityRef,
     options?: { splits?: SplitEvent[] },
-  ): Promise<{ result: NormalizationResult; meta: FetchMeta }>;
+  ): Promise<{ result: NormalizationResult; quarterly?: NormalizationResult; meta: FetchMeta }>;
+}
+
+/** A normalized latest quote. `sourceTimestamp` is the provider's trade/quote time, never our clock. */
+export interface NormalizedQuote {
+  symbol: string;
+  price: number;
+  previousClose: number | null;
+  change: number | null;
+  changePercent: number | null; // fraction (0.012 = +1.2%)
+  open: number | null;
+  dayHigh: number | null;
+  dayLow: number | null;
+  volume: number | null;
+  marketCap: number | null;
+  yearHigh: number | null;
+  yearLow: number | null;
+  currency: string;
+  exchange: string | null;
+  sourceTimestamp: string;
+  feed: QuoteFeed;
+  delayMinutes: number | null;
+  /** e.g. "IEX venue only" — shown next to the status. */
+  feedNote: string | null;
+}
+
+export interface QuoteProvider {
+  descriptor: ProviderDescriptor;
+  /** Feed classification for the configured plan (REALTIME only when the provider documents it). */
+  feed(): QuoteFeed;
+  /** Whether polling every 60 s fits the configured plan's rate limits. */
+  supportsAutoRefresh(): boolean;
+  getQuote(security: SecurityRef): Promise<{ quote: NormalizedQuote; meta: FetchMeta }>;
+}
+
+export interface FilingRef {
+  accessionNumber: string;
+  form: string;
+  filingDate: string; // YYYY-MM-DD
+  acceptedAt: string | null; // ISO instant
+  reportDate: string | null; // period end
+  url: string;
+}
+
+export interface FilingsProvider {
+  descriptor: ProviderDescriptor;
+  /** Most recent periodic reports (10-K, 10-Q, 20-F, 40-F and amendments), newest first. */
+  latestPeriodicFilings(security: SecurityRef): Promise<{ filings: FilingRef[]; meta: FetchMeta }>;
+}
+
+/** Independent statements source used to verify primary filings. */
+export interface VerificationStatementsProvider {
+  descriptor: ProviderDescriptor;
+  getStatements(security: SecurityRef, period: "annual" | "quarter"): Promise<{ periods: SourcedPeriod[]; currency: string | null; meta: FetchMeta }>;
 }
 
 export interface PriceHistory {
@@ -77,6 +132,7 @@ export type ProviderErrorCode =
   | "NOT_CONFIGURED"
   | "NOT_SUPPORTED"
   | "NOT_FOUND"
+  | "NOT_ENTITLED"
   | "RATE_LIMITED"
   | "HTTP_ERROR"
   | "NETWORK_ERROR"
