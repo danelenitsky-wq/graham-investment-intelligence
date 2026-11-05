@@ -8,6 +8,7 @@
  * kept and the conflict is surfaced so downstream analysis can refuse to run.
  */
 import type { CanonicalConcept } from "@/lib/normalization/concepts";
+import { isTradingDay, localParts, previousTradingDay, sessionCloseTime, zonedTimeToUtc, type ExchangeCalendar } from "@/lib/market/calendar";
 
 export type VerificationStatus = "VERIFIED" | "CONFLICT" | "SINGLE_SOURCE" | "UNVERIFIED";
 
@@ -151,11 +152,18 @@ export interface QuotePoint {
   price: number;
   sourceTimestamp: string;
   previousClose?: number | null;
+  /**
+   * Official session closes this quote vouches for, keyed by exchange-local
+   * trading date. An end-of-day quote vouches for its own close; an intraday
+   * quote for its previous close. Lets a delayed intraday quote be checked
+   * against an end-of-day close from another provider without a false conflict.
+   */
+  closes?: { date: string; value: number }[];
 }
 
 export interface QuoteVerification {
   status: VerificationStatus;
-  comparedField: "price" | "previousClose" | null;
+  comparedField: "price" | "previousClose" | `close:${string}` | null;
   primary: number | null;
   secondary: number | null;
   relDiff: number | null;
@@ -180,9 +188,93 @@ export function verifyQuote(
     const c = compareFigures(primary.price, secondary.price, { rel: tol, abs: 0.01 });
     return { status: c.status, comparedField: "price", primary: primary.price, secondary: secondary.price, relDiff: c.relDiff, secondaryProvider: secondary.provider, note: null };
   }
+  if (primary.closes && secondary.closes) {
+    // Most recent trading date both providers vouch for.
+    const other = new Map(secondary.closes.map((c) => [c.date, c.value]));
+    const common = primary.closes.filter((c) => other.has(c.date)).sort((x, y) => y.date.localeCompare(x.date))[0];
+    if (common) {
+      const sv = other.get(common.date)!;
+      const c = compareFigures(common.value, sv, { rel: tol, abs: 0.01 });
+      return { status: c.status, comparedField: `close:${common.date}`, primary: common.value, secondary: sv, relDiff: c.relDiff, secondaryProvider: secondary.provider, note: null };
+    }
+    return { status: "SINGLE_SOURCE", comparedField: null, primary: primary.price, secondary: secondary.price, relDiff: null, secondaryProvider: secondary.provider, note: "TIMESTAMPS_TOO_FAR_APART" };
+  }
   if (primary.previousClose != null && secondary.previousClose != null) {
     const c = compareFigures(primary.previousClose, secondary.previousClose, { rel: tol, abs: 0.01 });
     return { status: c.status, comparedField: "previousClose", primary: primary.previousClose, secondary: secondary.previousClose, relDiff: c.relDiff, secondaryProvider: secondary.provider, note: null };
   }
   return { status: "SINGLE_SOURCE", comparedField: null, primary: primary.price, secondary: secondary.price, relDiff: null, secondaryProvider: secondary.provider, note: "TIMESTAMPS_TOO_FAR_APART" };
+}
+
+/**
+ * Official closes a quote vouches for (see QuotePoint.closes). An end-of-day
+ * quote, or an intraday quote stamped at/after the session close, vouches for
+ * that day's close; its previous close belongs to the previous trading day.
+ */
+export function quoteCloses(
+  quote: { price: number; previousClose: number | null; sourceTimestamp: string; feed: string },
+  cal: ExchangeCalendar,
+  closeToleranceMinutes = 1,
+): { date: string; value: number }[] {
+  const ts = new Date(quote.sourceTimestamp);
+  if (!Number.isFinite(ts.getTime())) return [];
+  const date = localParts(ts, cal.timezone).date;
+  if (!isTradingDay(cal, date)) return [];
+  const out: { date: string; value: number }[] = [];
+  const close = zonedTimeToUtc(date, sessionCloseTime(cal, date), cal.timezone).getTime();
+  if (quote.feed === "EOD" || ts.getTime() >= close - closeToleranceMinutes * 60_000) out.push({ date, value: quote.price });
+  if (quote.previousClose != null) out.push({ date: previousTradingDay(cal, date), value: quote.previousClose });
+  return out;
+}
+
+export interface DividendYearCheck {
+  fiscalYear: number;
+  secValue: number;
+  providerSum: number;
+  /** Ex-dates of the provider dividends that make up providerSum. */
+  exDates: string[];
+  status: "VERIFIED" | "SINGLE_SOURCE";
+}
+
+const shiftDays = (date: string, days: number) => new Date(Date.parse(date + "T00:00:00Z") + days * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * Cross-check per-payment dividends (e.g. Tiingo divCash) against the SEC
+ * "dividends declared per share" of each fiscal year. Declaration and ex-dates
+ * can fall in different fiscal years, so the fiscal-year window and the same
+ * window shifted by ~one quarter are both tried. Agreement upgrades the year to
+ * VERIFIED; disagreement only leaves it SINGLE_SOURCE (timing differences are
+ * not proof of a wrong value), and never alters the stored amounts.
+ */
+export function verifyDividendYears(
+  dividends: { exDate: string; amount: number }[],
+  secYears: { fiscalYear: number; periodStart: string | null; periodEnd: string; value: number }[],
+  /** Brings a payment to the share basis of the SEC figure (split adjustment). */
+  toSecBasis: (exDate: string, amount: number, periodEnd: string) => number = (_d, a) => a,
+  tol: Tolerance = { rel: 0.02, abs: 0.005 },
+): DividendYearCheck[] {
+  const out: DividendYearCheck[] = [];
+  for (const y of secYears) {
+    if (!(y.value > 0)) continue;
+    const start = y.periodStart ?? shiftDays(y.periodEnd, -364);
+    let best: DividendYearCheck | null = null;
+    for (const shift of [0, 60]) {
+      const from = shiftDays(start, shift);
+      const to = shiftDays(y.periodEnd, shift);
+      const inWindow = dividends.filter((d) => d.exDate >= from && d.exDate <= to);
+      const sum = inWindow.reduce((s, d) => s + toSecBasis(d.exDate, d.amount, y.periodEnd), 0);
+      const c = compareFigures(y.value, sum, tol);
+      const check: DividendYearCheck = {
+        fiscalYear: y.fiscalYear,
+        secValue: y.value,
+        providerSum: Math.round(sum * 1e6) / 1e6,
+        exDates: inWindow.map((d) => d.exDate),
+        status: inWindow.length > 0 && c.status === "VERIFIED" ? "VERIFIED" : "SINGLE_SOURCE",
+      };
+      if (!best || check.status === "VERIFIED") best = check;
+      if (check.status === "VERIFIED") break;
+    }
+    if (best) out.push(best);
+  }
+  return out;
 }

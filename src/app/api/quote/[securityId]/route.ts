@@ -27,10 +27,21 @@ export async function GET(_req: NextRequest, ctx: RouteContext<"/api/quote/[secu
   return Response.json(view, { headers: noStore });
 }
 
-/** Refresh Now: always makes a new provider request (2 s spam guard). */
+/**
+ * Refresh Now: always makes a new provider request (2 s spam guard), then
+ * re-checks SEC for a newer 10-K/10-Q; a new filing reloads the statements,
+ * re-runs verification and invalidates dependent calculations.
+ */
 export async function POST(_req: NextRequest, ctx: RouteContext<"/api/quote/[securityId]">) {
   const { securityId } = await ctx.params;
   if (!(await exists(securityId))) return Response.json({ error: "NOT_FOUND" }, { status: 404, headers: noStore });
   const view = await getQuoteView(securityId, { force: true });
+  after(async () => {
+    try {
+      await checkFilings(securityId, { force: true, minIntervalMinutes: 10 });
+    } catch (e) {
+      console.error("[filings] check failed", e);
+    }
+  });
   return Response.json(view, { headers: noStore });
 }

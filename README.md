@@ -6,9 +6,11 @@ with modern extensions kept clearly separate and always labelled.
 
 - Hebrew (RTL) by default, English one click away (`/he/…`, `/en/…`)
 - Dark and light mode, desktop-first, responsive on mobile
-- US stocks first: SEC EDGAR filings (source of record), FMP latest quotes + verification,
-  Tiingo daily history / IEX fallback; data model ready for TASE
-- **Data freshness engine**: Live / Delayed / Last close / Cached / Stale / Unavailable,
+- US stocks first, **free-first data: no paid subscription required.** SEC EDGAR filings
+  (source of record), Tiingo free (20+ years of official daily prices, dividends, splits,
+  last close), optional free Finnhub / Twelve Data intraday quotes, optional FMP *Basic*
+  statement cross-check; data model ready for TASE
+- **Data freshness engine**: Fresh / Delayed / Last close / Cached / Stale / Unavailable / Conflicted,
   exchange calendars and timezones, 60 s refresh, Refresh Now, daily new-filing check,
   cross-source verification, and an INSUFFICIENT VERIFIED DATA gate.
   See [docs/DATA_PROVIDERS.md](docs/DATA_PROVIDERS.md) for the provider evaluation and setup.
@@ -28,7 +30,7 @@ Requirements: Node ≥ 20.19, PostgreSQL 16 (or Docker).
 
 ```bash
 npm install                      # also runs `prisma generate`
-cp .env.example .env             # then edit SEC_USER_AGENT, TIINGO_API_KEY, FMP_API_KEY/FMP_PLAN
+cp .env.example .env             # then edit SEC_USER_AGENT and TIINGO_API_KEY (both free)
 docker compose up -d db          # or point DATABASE_URL at your own PostgreSQL
 npm run db:deploy                # apply migrations
 npm run data:sync-universe       # load US tickers/names/CIKs from SEC (~10k rows)
@@ -62,7 +64,8 @@ the real normalization → engines → UI pipeline. Every page that shows them c
 | `lint` / `typecheck` | ESLint / TypeScript (`next typegen` first) |
 | `db:migrate` / `db:deploy` / `db:studio` | Prisma |
 | `data:sync-universe` | SEC security master sync |
-| `data:refresh -- TICKER …` | Fetch prices + annual/quarterly statements, verify against FMP |
+| `data:refresh -- TICKER …` | Fetch prices + annual/quarterly statements, cross-check (FMP Basic if set, SEC dividends) |
+| `validate:free [-- TICKERS] [--db] [--out file]` | Live validation of the free providers (MSFT, NVDA, GOOGL by default): PASS / FAIL / BLOCKED / SKIPPED |
 | `data:check-filings [-- --force]` | Daily check for new 10-K/10-Q filings; refreshes only what changed |
 | `acceptance:quote -- TICKER [--url URL]` | Live quote acceptance test (stops at the configuration checkpoint without keys) |
 | `test:integration` | Database-backed tests (quote service, filings check, verification) with scripted providers |
@@ -114,7 +117,7 @@ Key rules the code enforces:
   ingestion run (`DataFetch`), original XBRL tag, accession number and filing date.
   Engine runs are stored as immutable `AnalysisSnapshot`s with their inputs and hash.
 - **Secrets stay on the server.** Keys are read in `src/server/env.ts`
-  (`server-only`), Tiingo's key goes in a header, and URLs are redacted before being
+  (`server-only`), Tiingo, Finnhub and Twelve Data keys go in headers, and URLs are redacted before being
   stored. The UI only ever sees "configured / not configured".
 
 ### Data model (Prisma)
@@ -147,5 +150,5 @@ open items below.
 - Not implemented by design: investment recommendations / decision engine.
 - Not yet: alerts evaluation (model exists), TASE provider and calendar, IFRS (20-F) filers,
   TTM statements, FX conversion, authentication (single-user app).
-- Live provider retrieval has not been exercised from the build environment (no credentials,
-  provider hosts blocked); see the configuration checkpoint in docs/DATA_PROVIDERS.md.
+- Live retrieval runs on a machine with network access (`npm run validate:free -- --db`);
+  the cloud build environment blocks the provider hosts. See docs/DATA_PROVIDERS.md.

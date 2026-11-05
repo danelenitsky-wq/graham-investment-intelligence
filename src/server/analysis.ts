@@ -1,4 +1,5 @@
 import "server-only";
+import { fundamentalsStatus, type DataStatus, type FundamentalsReason } from "@/lib/freshness/status";
 import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { evaluateDecision, type DecisionResult } from "@/lib/decision";
@@ -100,6 +101,8 @@ export interface DataHealth {
   latestQuoteTimestamp: string | null;
   latestFiling: { form: string | null; filingDate: string | null; acceptedAt: string | null; accessionNumber: string | null; url: string | null } | null;
   newerFiling: { form: string; filedAt: string; accessionNumber: string } | null;
+  /** FRESH … CONFLICTED for the filings-based data, judged by reporting period, not by API retrieval time. */
+  fundamentalsStatus: { status: DataStatus; reasons: FundamentalsReason[] };
   lastFilingCheckAt: string | null;
   lastSuccessfulRefreshAt: string | null;
   conflicts: ConflictRow[];
@@ -130,6 +133,12 @@ export interface SecurityAnalysis {
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+/** The most recent statements request failed (stored figures are then served as CACHED). */
+function lastFundamentalsFetchFailed(fetches: { dataset: string; status: string }[]): boolean {
+  const last = fetches.find((f) => f.dataset === "annual-financials");
+  return last?.status === "FAILED";
+}
 
 function fiscalYearOf(date: Date, fiscalYearEndMonth: number | null): number {
   const m = date.getUTCMonth() + 1;
@@ -309,6 +318,12 @@ export async function getSecurityAnalysis(
         ? { form: null, filingDate: maxFiledAt, acceptedAt: null, accessionNumber: null, url: null }
         : null,
     newerFiling,
+    fundamentalsStatus: fundamentalsStatus({
+      freshness: freshness.fundamentals,
+      newerFiling: newerFiling !== null,
+      lastRefreshFailed: lastFundamentalsFetchFailed(sourceFetches),
+      conflicted: conflictRows.some((v) => v.dataset === "financials"),
+    }),
     lastFilingCheckAt: security.lastFilingCheckAt?.toISOString() ?? null,
     lastSuccessfulRefreshAt: sourceFetches.find((f) => f.status === "SUCCESS" || f.status === "PARTIAL")?.completedAt?.toISOString() ?? null,
     conflicts: conflictRows.map((v) => ({

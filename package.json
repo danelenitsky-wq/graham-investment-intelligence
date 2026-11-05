@@ -19,6 +19,7 @@
     "data:sync-universe": "tsx --conditions=react-server --env-file=.env scripts/sync-universe.ts",
     "data:refresh": "tsx --conditions=react-server --env-file=.env scripts/refresh.ts",
     "data:check-filings": "tsx --conditions=react-server --env-file=.env scripts/check-filings.ts",
+    "validate:free": "tsx --conditions=react-server --env-file=.env scripts/validate-free-providers.ts",
     "acceptance:quote": "tsx --conditions=react-server --env-file=.env scripts/acceptance-live-quote.ts",
     "postinstall": "prisma generate"
   },

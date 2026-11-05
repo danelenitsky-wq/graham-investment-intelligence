@@ -22,14 +22,12 @@ export interface FilingCheckResult {
  * 10-Q newer than anything stored, statements are re-fetched and calculations
  * re-run; otherwise nothing else is requested.
  */
-export async function checkFilings(securityId: string, options: { force?: boolean } = {}): Promise<FilingCheckResult> {
+export async function checkFilings(securityId: string, options: { force?: boolean; minIntervalMinutes?: number } = {}): Promise<FilingCheckResult> {
   const security = await db.security.findUniqueOrThrow({ where: { id: securityId }, include: { exchange: true } });
   const base = { securityId, ticker: security.ticker };
-  if (
-    !options.force &&
-    security.lastFilingCheckAt &&
-    Date.now() - security.lastFilingCheckAt.getTime() < FILING_CHECK_INTERVAL_HOURS * 3_600_000
-  ) {
+  // Forced checks (Refresh Now) may still set a floor so repeated clicks do not hammer EDGAR.
+  const intervalMs = options.force ? (options.minIntervalMinutes ?? 0) * 60_000 : FILING_CHECK_INTERVAL_HOURS * 3_600_000;
+  if (intervalMs > 0 && security.lastFilingCheckAt && Date.now() - security.lastFilingCheckAt.getTime() < intervalMs) {
     return { ...base, status: "NOT_DUE" };
   }
   const provider = filingsProviderFor(security.exchange.market as MarketCode);

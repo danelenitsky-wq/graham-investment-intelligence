@@ -15,15 +15,15 @@ const classify = (quote: QuoteObservation | null, now: Date, lastFetchFailed = f
   classifyQuote({ quote, session: session(now), now, lastFetchFailed });
 
 describe("quote status — market open", () => {
-  it("LIVE only for a provider-confirmed real-time feed with a fresh timestamp", () => {
-    expect(classify(q("2026-11-04T14:59:30Z"), OPEN_NOW).status).toBe("LIVE");
+  it("FRESH only for a provider-confirmed real-time feed with a fresh timestamp", () => {
+    expect(classify(q("2026-11-04T14:59:30Z"), OPEN_NOW).status).toBe("FRESH");
   });
 
-  it("never LIVE when the feed is not confirmed real-time, however fresh", () => {
+  it("never FRESH when the feed is not confirmed real-time, however fresh", () => {
     for (const feed of ["UNKNOWN", "DELAYED"] as const) {
       const c = classify(q("2026-11-04T14:59:59Z", feed), OPEN_NOW);
       expect(c.status).toBe("DELAYED");
-      expect(c.status).not.toBe("LIVE");
+      expect(c.status).not.toBe("FRESH");
     }
   });
 
@@ -89,7 +89,7 @@ describe("quote status — failures and edge cases", () => {
   it("CACHED when the provider failed but the last verified value is recent", () => {
     const c = classify(q("2026-11-04T14:58:00Z", "REALTIME", "2026-11-04T14:58:01Z"), OPEN_NOW, true);
     expect(c.status).toBe("CACHED");
-    expect(c.baseStatus).toBe("LIVE");
+    expect(c.baseStatus).toBe("FRESH");
     expect(c.reasons).toContain("PROVIDER_FAILED_USING_CACHE");
   });
 
@@ -108,7 +108,7 @@ describe("quote status — failures and edge cases", () => {
   });
 
   it("only usable statuses feed analysis", () => {
-    expect(["LIVE", "DELAYED", "LAST_CLOSE", "CACHED"].every((s) => isUsableQuoteStatus(s as never))).toBe(true);
+    expect(["FRESH", "DELAYED", "LAST_CLOSE", "CACHED"].every((s) => isUsableQuoteStatus(s as never))).toBe(true);
     expect(isUsableQuoteStatus("STALE")).toBe(false);
     expect(isUsableQuoteStatus("UNAVAILABLE")).toBe(false);
   });

@@ -1,120 +1,182 @@
-# Market data providers, freshness engine and configuration checkpoint
+# Market data providers — free-first
 
-This document records the provider evaluation, the design that was implemented,
-the exact credentials needed, and the acceptance test. It was written on
-2026‑11‑04. Provider plans and prices change, so check the linked pages before
-you subscribe.
+**The application does not require any paid data subscription.** This document
+records the audit of the previous design, the free providers and endpoints now
+used, the credentials needed, how freshness and provenance work, and how the
+integration is validated. Last revised 2026‑11‑05. Free plans change; check the
+linked pages before relying on a limit.
 
-## 1. Provider evaluation
+## 1. Audit of the previous implementation (2026‑11‑04 design)
 
-Sources consulted: the FMP pricing page, the Twelve Data pricing page, the
-Tiingo IEX product page, SEC EDGAR API documentation, the TASE DataHub SDK page,
-and third‑party summaries of Finnhub's and EODHD's pricing. Finnhub's own
-pricing page and FMP's endpoint reference render client‑side and could not be
-read from this environment. Cells marked *unverified* come from those
-summaries or from earlier knowledge, not from an official page read today.
-
-| | **Financial Modeling Prep** | **Finnhub** | **Twelve Data** | **SEC EDGAR** | **Tiingo** | **EODHD** |
-|---|---|---|---|---|---|---|
-| Latest quote | `/stable/quote` (price, change, market cap, 52‑w range, unix timestamp) | `/quote` (c, d, dp, h, l, o, pc, t) | `/quote`, `/price` | — (no prices) | IEX last sale and top of book (`/iex`) | Live (delayed) endpoint |
-| Real‑time vs delayed | Basic: end of day only. Starter and above: real‑time | Free: "real‑time US quotes" (*unverified*) | US real‑time from Basic; other markets EOD on Grow, real‑time EU on Pro | — | Real‑time, but **IEX venue only** (~2–3 % of US volume) | 15‑min delayed on paid plans; real‑time on higher tiers |
-| 10+ yrs statements | Starter: US statements. Premium: US/UK/CA and 30+ yrs of history. Ultimate: global | Standardized and as‑reported financials on All‑in‑One ($50/mo, *unverified*) | Fundamentals from Grow; depth not stated | **Yes**, primary filings, XBRL from ~2009 (10‑K, 10‑Q, 20‑F) | Fundamentals add‑on (not used) | Fundamentals plan, 30+ yrs (*unverified*) |
-| 20+ yrs dividends | Premium (30+ yrs); Starter is limited to 5 yrs of history | Premium | Not stated | Only per‑share dividends tagged in filings | **Yes**, in daily history (30+ yrs) | Yes |
-| Historical prices | EOD full and dividend‑adjusted | Yes | Yes | — | **Yes**, 30+ yrs EOD with adjClose | Yes |
-| Split adjustment | `/splits` and adjusted series | Yes | Yes | — | `splitFactor` per day and `adjClose` | Yes |
-| Pricing and rate limits | Free 250/day. Starter $19/mo annual ($29 monthly), 300/min. Premium $49 ($69), 750/min. Ultimate $99 ($139), 3,000/min | Free 60/min. All‑in‑One $50/mo, 300/min (*unverified*) | Basic free 8/min (800/day). Grow $29+ (55/min). Pro $99+ (610/min) | Free; ≤ 10 req/s; declared User‑Agent required | Free: 50 req/h and 1,000/day (IEX). Power $30/mo: 10k/h | $19.99–$99.99/mo, 100k/day, 1,000/min (*unverified*) |
-| TASE coverage | Ultimate "full global coverage" (`.TA` symbols, *unverified*) | International on paid plans (*unverified*) | Not stated on the pricing page | No | No | Tel Aviv exchange listed (`TA`, *unverified*) |
-| Licence | Personal and commercial tabs; display or redistribution needs a separate agreement | Personal or commercial | Individual or business | Public domain | Free, Power and Commercial plans are for internal use only | Personal |
-
-**Official TASE source:** TASE DataHub (<https://www.tase.co.il/en/content/products_lobby/datahub>)
-has free endpoints (securities basic, indices, funds) and paid market data
-products. Israeli issuers' IFRS statements come from MAYA/MAGNA, not XBRL.
-
-## 2. Decision
-
-| Role | Provider | Why |
+| Area | Before | Problem |
 |---|---|---|
-| **Financial statements (source of record)** | **SEC EDGAR** companyfacts (annual and quarterly) | Primary filings, free, with accession numbers, filing dates, restatements and split adjustment |
-| **New‑filing detection** | **SEC EDGAR** submissions index | Lists every 10‑K and 10‑Q with acceptance time; checked daily |
-| **Latest quote (primary)** | **Financial Modeling Prep** | One call returns price, provider timestamp, change, market cap, 52‑week range and exchange. Starter and above document real‑time US quotes |
-| **Quote fallback and cross‑check** | **Tiingo IEX** | Independent real‑time IEX last sale. Always labelled "IEX venue only" |
-| **Daily history, dividends and splits** | **Tiingo EOD** (FMP as fallback) | 30+ years of daily bars on the free plan, with `divCash`, `splitFactor` and `adjClose` |
-| **Statement verification** | **FMP** income, balance and cash‑flow statements | Independent of SEC parsing. Material figures are compared and conflicts flagged |
-| **TASE** | Not implemented (NOT_CONFIGURED) | No evaluated provider offers both TASE prices and IFRS statements. Candidates: TASE DataHub (official) or EODHD (`TA`) for prices, MAYA for statements |
+| Latest quote | FMP `/stable/quote` primary (Starter or higher declared via `FMP_PLAN`), Tiingo IEX fallback | Real‑time quotes and 60 s refresh assumed **FMP Starter ($19–29/mo)** |
+| Daily history | Tiingo EOD; FMP `/historical-price-eod/full`, `/dividend-adjusted`, `/dividends`, `/splits` as fallback | FMP history beyond 5 years needs **Premium** |
+| Statement verification | FMP income / balance / cash‑flow, annual (limit 15) **and quarterly** (limit 20) | Quarterly and long history are **paid** on FMP |
+| Statements of record | SEC EDGAR companyfacts (annual + quarterly) | Free — kept |
+| Filings check | SEC EDGAR submissions, daily | Free — kept |
+| Tiingo quote (free plan) | IEX call first, then official close | IEX returns no last sale on the free plan (live test 2026‑11‑05), so every quote cost two of the 50 hourly requests |
+| Credentials | `SEC_USER_AGENT`, `TIINGO_API_KEY`, `TIINGO_PLAN`, `FMP_API_KEY`, `FMP_PLAN`, `CRON_SECRET` | `FMP_PLAN` existed only to unlock paid behaviour |
+| Statuses | Live, Delayed, Last close, Cached, Stale, Unavailable | No Conflicted status; statements had only freshness levels |
+| Provenance | Source, fetch run, XBRL tag, accession, filing date, unit, verification on line items | No per‑figure source URL or retrieval time; dividends had no verification status |
 
-Finnhub and Twelve Data were not chosen. Twelve Data's free tier (8/min) cannot
-sustain 60‑second refresh, and its fundamentals history and TASE coverage are
-not documented on its pricing page. Finnhub's financials need the $50/mo plan,
-which costs as much as FMP Premium while giving fewer fields per quote call.
-Both fit the same `QuoteProvider` contract, so either can be added later.
+Kept unchanged: provider contracts (`src/lib/providers/types.ts`), the SEC
+adapter and normaliser, the market calendar, the cache policy, the
+`QuoteSnapshot` / `DataFetch` / `DataVerification` models, the sufficiency gate
+and the whole UI.
 
-## 3. What you need to configure
+## 2. Providers now used
 
-Nothing is filled in by default, and nothing falls back to demo data. Without
-keys the UI shows **Unavailable** or **INSUFFICIENT VERIFIED DATA**.
+| Role | Provider (plan) | Endpoint | Free‑plan limit |
+|---|---|---|---|
+| Statements of record (annual + quarterly), EPS, shares, dividends declared per share | **SEC EDGAR** (free, public domain) | `data.sec.gov/api/xbrl/companyfacts/CIK##########.json` | ≤ 10 req/s, declared User‑Agent ([fair access](https://www.sec.gov/os/accessing-edgar-data)) |
+| New‑filing detection (10‑K, 10‑Q, 20‑F, 40‑F) | **SEC EDGAR** | `data.sec.gov/submissions/CIK##########.json` | same |
+| Security master (ticker → CIK, exchange) | **SEC EDGAR** | `www.sec.gov/files/company_tickers_exchange.json` | same |
+| Daily prices (20+ years), dividends, splits, adjusted close | **Tiingo** (free) | `api.tiingo.com/tiingo/daily/{ticker}/prices` | 50 req/hour, 1,000/day, 500 symbols/month |
+| Quote of record: official last close | **Tiingo** (free) | same endpoint, last 14 days | same |
+| Intraday quote (optional) | **Finnhub** (free) | `finnhub.io/api/v1/quote` | 60 calls/min |
+| Intraday quote with 52‑week range (optional) | **Twelve Data** (free Basic) | `api.twelvedata.com/quote` | 8 credits/min, 800/day |
+| Statement cross‑check (optional) | **FMP** (free **Basic** only) | `/stable/income-statement`, `/balance-sheet-statement`, `/cash-flow-statement`, `period=annual&limit=5` | 250 calls/day |
+| 52‑week high / low | Derived from Tiingo official daily bars (labelled *derived*), or Twelve Data's own range when it is the quote source | — | — |
+| TASE | Not implemented (NOT_CONFIGURED) | — | — |
 
-| Variable | Required for | Where to get it |
+Quote order: Finnhub → Twelve Data → Tiingo, using whichever are configured.
+The next configured provider cross‑checks the first one. With only the
+minimum setup the quote is Tiingo's official last close.
+
+**Why these.** Finnhub's free `/quote` is the only free intraday quote with a
+60/min budget; its candles, fundamentals and dividends are premium and are not
+used. Twelve Data's free tier is too small for auto refresh but returns a
+52‑week range and works as a second opinion. Neither documents real‑time
+delivery for every symbol on the free plan, so both are classified as feed
+`UNKNOWN`. FMP Basic can still cross‑check about five annual periods; nothing
+else is taken from FMP.
+
+## 3. Paid dependencies removed
+
+- FMP latest quotes (`/stable/quote`) and the `FMP_PLAN` switch (no longer read).
+- FMP daily history, dividend‑adjusted prices, dividends and splits.
+- FMP quarterly statements and the 15‑year annual request (Premium history).
+- 60 s auto refresh that assumed FMP Starter. Auto refresh now runs only with
+  Finnhub (free, 60/min) or a paid Tiingo plan the user declares.
+- Tiingo IEX call on the free plan (it returned no trades and wasted quota).
+
+If FMP answers any request with “not included in your plan” (HTTP 402 or an
+`Error Message`), the cross‑check records `NOT_ENTITLED`, pauses for 24 hours,
+and nothing else is affected.
+
+## 4. Credentials
+
+| Variable | Needed for | Required? |
 |---|---|---|
-| `SEC_USER_AGENT` | Statements, filings, security master | Free. Set to `"AppName your-name your-email"`, as the [SEC fair‑access policy](https://www.sec.gov/os/accessing-edgar-data) requires |
-| `FMP_API_KEY` | Latest quotes, statement verification | <https://site.financialmodelingprep.com/developer/docs/dashboard>. **Starter or higher** for real‑time quotes and 60‑second refresh. **Premium** for 30+ years of history |
-| `FMP_PLAN` | Declares your FMP plan: `basic`, `starter`, `premium`, `ultimate` or `enterprise` | Only `starter` and above are treated as real‑time. `basic` quotes are never labelled Live |
-| `TIINGO_API_KEY` | Daily history, dividends, splits, IEX fallback quotes | <https://www.tiingo.com/account/api/token> (free) |
-| `TIINGO_PLAN` | `free`, `power` or `commercial` | The free plan's 50 requests/hour cannot sustain 60‑second polling, so auto refresh with Tiingo needs `power` |
-| `CRON_SECRET` | `GET /api/cron/check-filings` | Any random string of 16+ characters |
+| `SEC_USER_AGENT` | Statements, filings, security master | **Yes** (free). `"AppName your-name your-email"` |
+| `TIINGO_API_KEY` | Daily history, dividends, splits, last close | **Yes** (free) |
+| `TIINGO_PLAN` | `free` (default), `power`, `commercial` | Optional. Paid plans enable IEX quotes and auto refresh |
+| `FINNHUB_API_KEY` | Intraday quote, auto refresh every 60 s | Optional (free) |
+| `TWELVE_DATA_API_KEY` | Intraday quote + 52‑week range, cross‑check | Optional (free) |
+| `FMP_API_KEY` | Annual statement cross‑check (Basic) | Optional (free) |
+| `CRON_SECRET` | `GET /api/cron/check-filings` | Optional |
 
-Minimum useful setup: `SEC_USER_AGENT` + `TIINGO_API_KEY` (free). This gives
-Last Close quotes and full fundamentals. Add `FMP_API_KEY` with
-`FMP_PLAN=starter` for live quotes, 60‑second refresh and statement
-verification.
+Keys are read only in `src/server/env.ts` (`server-only`). Tiingo, Finnhub and
+Twelve Data keys travel in request headers; FMP's in a query parameter that is
+redacted before anything is stored or logged. The UI and the validation script
+only print “set / missing”.
 
-Keys live only in server environment variables (`src/server/env.ts` is
-`server-only`). They are sent in headers where the provider supports it, and
-redacted from every stored or logged URL.
+## 5. Status vocabulary
 
-## 4. How freshness works
+One vocabulary for every dataset (`src/lib/freshness/quote.ts`, `status.ts`):
 
-- **Page open** fetches the latest quote on the server (`getQuoteView`), subject to the cache.
-- **Cache policy** (`src/lib/freshness/quote.ts › decideQuoteFetch`): 55 s TTL while open, 30 min while closed. Cache is invalidated when the session changes (open→closed, new trading day). After a failure it backs off for 30 s.
-- **Auto refresh**: the client polls `GET /api/quote/:id` every 60 s, only when the primary provider's plan supports it and the market is not closed. When closed, it wakes at the next open.
-- **Refresh Now**: `POST /api/quote/:id` always makes a new provider request (2 s spam guard). The response lists every request made (`attempts[]` with the `DataFetch` id).
-- **Status** (`classifyQuote`): Live, Delayed, Last close, Cached, Stale, Unavailable. **Live** requires a provider‑documented real‑time feed, an open market, and a quote under 2 minutes old.
-- **Market calendar** (`src/lib/market/calendar.ts`): NYSE/Nasdaq holidays, including Good Friday, observed‑day rules, early closes and special closures. All timestamps are shown in the exchange's timezone. The TASE calendar is not modelled, so its state is UNKNOWN and its quotes are never Live or Last close.
-- **Outages**: every successful quote is stored (`QuoteSnapshot`). When providers fail, the last verified value is shown as **Cached**, then **Stale**.
-- **Daily filings check**: `npm run data:check-filings`, or the cron endpoint, or automatically after a quote request when the last check is over 24 h old. A newer 10‑K or 10‑Q than any stored one triggers a statements refresh, verification and recalculation. Analysis snapshots are only re‑recorded when their inputs hash changes.
-- **Sufficiency gate** (`src/lib/freshness/gate.ts`): stale or unavailable price, missing required concepts, stale statements, a newer unloaded filing, unresolved conflicts, or development fixtures all mean **INSUFFICIENT VERIFIED DATA**. Graham screens, margins of safety and the screening "meets all" filter are then withheld.
+| Status | Quote | Financial statements |
+|---|---|---|
+| **FRESH** | Real‑time feed documented for the plan, market open, < 2 min old. *Not reachable with free plans.* | Latest 10‑K/10‑Q loaded, period within the normal cycle |
+| **DELAYED** | Market open, feed delayed or not confirmed real‑time (Finnhub, Twelve Data free) | Next annual report overdue (15–24 months since fiscal year end) |
+| **LAST_CLOSE** | Official close of the latest session (Tiingo free) | — |
+| **CACHED** | Latest provider request failed; last verified value shown | Latest statements request failed; stored filings shown |
+| **STALE** | Older than the market state allows | A newer filing exists but is not loaded, or the period is > 24 months old |
+| **UNAVAILABLE** | No quote ever retrieved | No statements |
+| **CONFLICTED** | Another provider disagrees beyond 0.5 % on the same trading date | An open conflict with the independent source |
 
-Every stored figure carries: provider (`DataSource`), filing reference
-(accession number and EDGAR URL), source timestamp (filing date / quote time),
-retrieval timestamp (`DataFetch.completedAt`), fiscal year and period, currency
-and unit, and `verificationStatus`.
+A recent API retrieval never makes statements FRESH: they are judged by the
+reporting period and by whether a newer filing exists. CONFLICTED, STALE and
+UNAVAILABLE all block conclusions (INSUFFICIENT VERIFIED DATA).
 
-## 5. Acceptance test and configuration checkpoint
+**Quote cross‑checks match trading dates.** A delayed intraday quote vouches
+for the previous session's close; an end‑of‑day quote for its own close. They
+are compared on the latest date both vouch for
+(`quoteCloses` / `verifyQuote`), so a Finnhub intraday quote is never compared
+with a Tiingo close from another day.
+
+## 6. Provenance of every figure
+
+`GET /api/securities/:id/metrics` (and `getMetricProvenance`) returns every
+stored figure with:
+
+| Field | Statements (SEC) | Daily close | Dividends |
+|---|---|---|---|
+| Provider | `sec-edgar` | `tiingo` | `tiingo` |
+| Source document / URL | EDGAR filing index (`FinancialLineItem.sourceUrl`) + XBRL tag | Redacted request URL | Redacted request URL |
+| Reporting period | fiscal year, period, start, end (instant for balance sheet) | session date | ex‑date |
+| Filing / publication date | `filedAt`, form, accession number | session date | ex‑date |
+| Retrieval timestamp | `FinancialLineItem.retrievedAt` (moves on every confirmed refresh) | `DataFetch.completedAt` | `DataFetch.completedAt` |
+| Currency, unit | reporting currency; `USD`, `shares`, `USD/shares` | `USD/share` | `USD/share` |
+| Verification | VERIFIED / CONFLICT / SINGLE_SOURCE / UNVERIFIED (FMP Basic) | SINGLE_SOURCE | VERIFIED when the fiscal year's payments add up to the SEC “dividends declared per share”, else SINGLE_SOURCE |
+| Status | as in §5 | LAST_CLOSE etc. | — |
+
+Coverage per security (fiscal years, quarters, years of prices, dividend
+years, and missing required concepts in the last 10 years) is in the same
+response. Missing values stay missing; nothing is interpolated.
+
+## 7. Refresh, filings check and rate limits
+
+- **Refresh Now** (`POST /api/quote/:id`) always sends a new provider request
+  (2 s spam guard) and lists every request with its `DataFetch` id. It then
+  re‑checks EDGAR for a newer 10‑K/10‑Q (at most once per 10 min); a new filing
+  reloads statements, re‑verifies and re‑records the dependent calculations.
+- **Refresh data** (security page action, `npm run data:refresh`) re‑fetches
+  prices and statements. Unchanged payloads are not rewritten and calculations
+  are only re‑recorded when their inputs hash changes.
+- **Daily filings check**: `npm run data:check-filings`, the cron endpoint, or
+  automatically after a page‑open quote request when the last check is > 24 h old.
+- **Rate budgets** (`src/lib/providers/rate-limit.ts`): requests beyond a free
+  plan's limit are refused locally (`RATE_LIMITED`) before anything is sent:
+  Finnhub 55/min, Twelve Data 7/min and 780/day, Tiingo 48/hour and 950/day,
+  FMP 240/day, SEC 8/s (plus the existing 120 ms SEC spacing). Budgets are per
+  server process.
+
+## 8. Coverage and unsupported metrics
+
+| Requirement | Source | Notes |
+|---|---|---|
+| Annual income statement, balance sheet, cash flow | SEC | XBRL since ~2009, so 10+ fiscal years for most large filers |
+| Quarterly statements | SEC | 10‑Q periods; Q4 is derived only where SEC reports it |
+| EPS history, revenue, net income | SEC | |
+| Current assets / liabilities, long‑term debt, total liabilities, equity | SEC | `us-gaap:Liabilities` is not tagged by every filer; the gap is shown as missing |
+| Shares outstanding | SEC (dei cover page / balance sheet) | |
+| Dividend history | Tiingo (per payment, 20+ years) | Cross‑checked with SEC where “dividends declared per share” is tagged |
+| Latest price | Tiingo last close; Finnhub / Twelve Data intraday | Intraday is **Delayed** at best |
+| Historical prices | Tiingo | 20 years requested by default (`priceHistoryYears`) |
+| 52‑week high / low | Derived from Tiingo bars; Twelve Data when it is the quote source | |
+
+Not supported: real‑time (“Fresh”) quotes on free plans, provider market
+capitalisation (derived as price × SEC shares and labelled), TASE securities
+and IFRS (20‑F) filers, TTM statements, FX conversion.
+
+## 9. Validation
 
 ```bash
-npm run acceptance:quote -- AAPL                              # through the server module
-npm run acceptance:quote -- AAPL --url http://localhost:3000  # through the HTTP API
+npm run validate:free                          # MSFT, NVDA, GOOGL — provider level
+npm run validate:free -- --db --out validation.json   # + refresh, Refresh Now and provenance through PostgreSQL
 ```
 
-The script queries the ticker, prints the provider's source timestamp in exchange
-time and UTC, then presses Refresh Now. It passes only if a **new provider
-request** was recorded (new `DataFetch` row, new fetch id) and the provider
-returned a quote with a source timestamp.
+Each check is **PASS**, **FAIL**, **BLOCKED** (credential missing or host
+unreachable, so *not tested*) or **SKIPPED** (optional provider not set). The
+script checks actual responses: filing periods and dates, the latest session's
+close and its timestamp in New York time, quote age, 20 years of bars,
+dividend years, the 52‑week range, cross‑provider agreement on the same
+trading date, that Refresh Now creates new `DataFetch` rows, and that every
+stored figure carries all provenance fields. Exit code 0 = all pass, 1 = a
+failure, 2 = something was blocked.
 
-**Status on 2026‑11‑04: stopped at the configuration checkpoint.** The build
-environment had no API credentials. Its network policy also blocked
-`financialmodelingprep.com`, `api.tiingo.com`, `data.sec.gov`, `finnhub.io` and
-`api.twelvedata.com` (proxy 403). So **live retrieval has not been tested**.
-The script exits with code 2 and prints:
-
-```
-CONFIGURATION CHECKPOINT — no quote provider is configured, so live retrieval was NOT tested.
-  Financial Modeling Prep: missing FMP_API_KEY
-  Tiingo (end-of-day prices, IEX quotes): missing TIINGO_API_KEY
-```
-
-The same flow was tested against PostgreSQL with scripted providers
-(`npm run test:integration`): page‑open fetch, cache hit, Refresh Now making a
-new request, fallback, preserved last value on outage, conflict recording, the
-daily filings check, and change detection. The FMP field mapping follows FMP's
-stable API but has **not** been checked against a live FMP response. Run the
-acceptance script once you add a key.
+The cloud build environment blocks the provider hosts (proxy 403), so live
+validation runs on the user's machine. Results of the latest run are in the
+pull request description.

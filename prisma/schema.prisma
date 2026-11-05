@@ -233,6 +233,8 @@ model CorporateAction {
   source     DataSource          @relation(fields: [sourceId], references: [id])
   fetchId    String?
   fetch      DataFetch?          @relation(fields: [fetchId], references: [id], onDelete: SetNull)
+  // SINGLE_SOURCE unless an independent source (e.g. SEC dividends declared per share) agrees.
+  verificationStatus VerificationStatus @default(UNVERIFIED)
   createdAt  DateTime            @default(now())
 
   @@unique([securityId, type, exDate, sourceId])
@@ -301,6 +303,9 @@ model FinancialLineItem {
   filedAt       DateTime?          @db.Date
   splitAdjusted Boolean            @default(false)
   verificationStatus VerificationStatus @default(UNVERIFIED)
+  // Provenance per figure: the filing document (EDGAR index URL) and when we retrieved it.
+  sourceUrl     String?
+  retrievedAt   DateTime?
 
   @@unique([statementId, concept])
 }

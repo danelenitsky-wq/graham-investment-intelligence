@@ -43,7 +43,7 @@ async function main() {
     console.log("CONFIGURATION CHECKPOINT — no quote provider is configured, so live retrieval was NOT tested.");
     for (const p of providerStatuses().filter((s) => s.capabilities.includes("QUOTES")))
       console.log(`  ${p.name}: ${p.configured ? "configured" : `missing ${p.missingEnv.join(", ")}`}`);
-    console.log("Set FMP_API_KEY (+ FMP_PLAN) and/or TIINGO_API_KEY in .env — see docs/DATA_PROVIDERS.md.");
+    console.log("Set TIINGO_API_KEY (free) and optionally FINNHUB_API_KEY / TWELVE_DATA_API_KEY (free) in .env — see docs/DATA_PROVIDERS.md.");
     process.exitCode = 2;
     return;
   }

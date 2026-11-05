@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { FREE_PLAN_BUDGETS, rateLimiter, type RateBudget } from "./rate-limit";
 import { ProviderError } from "./types";
 
 /** Remove credentials from a URL before it is logged or stored. */
@@ -33,12 +34,20 @@ export interface HttpResult {
 export async function httpGet(
   provider: string,
   url: string,
-  init: { headers?: Record<string, string>; timeoutMs?: number; retries?: number; secretParams?: string[] } = {},
+  init: { headers?: Record<string, string>; timeoutMs?: number; retries?: number; secretParams?: string[]; budget?: RateBudget | null } = {},
 ): Promise<HttpResult> {
   const endpoint = redactUrl(url, init.secretParams);
   const retries = init.retries ?? 2;
+  const budget = init.budget === undefined ? FREE_PLAN_BUDGETS[provider] : init.budget;
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    if (budget) {
+      const waitMs = rateLimiter.take(provider, budget);
+      if (waitMs !== null) {
+        // Refuse locally rather than exceed the plan's documented limit.
+        throw new ProviderError(provider, "RATE_LIMITED", `Local request budget for ${provider} is used up; retry in ${Math.ceil(waitMs / 1000)} s.`, null, endpoint);
+      }
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), init.timeoutMs ?? 20_000);
     try {

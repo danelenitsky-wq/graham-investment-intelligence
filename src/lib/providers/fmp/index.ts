@@ -1,43 +1,27 @@
 import "server-only";
 import { env } from "@/server/env";
-import type { QuoteFeed } from "@/lib/freshness/quote";
-import { makeBar, validatePriceBars } from "@/lib/normalization/market";
 import { httpGet, parseJson } from "../http";
-import {
-  ProviderError,
-  type FetchMeta,
-  type PriceProvider,
-  type ProviderDescriptor,
-  type QuoteProvider,
-  type SecurityRef,
-  type VerificationStatementsProvider,
-} from "../types";
-import {
-  fmpAdjEodSchema,
-  fmpDividendsSchema,
-  fmpEodSchema,
-  fmpProfileSchema,
-  fmpQuoteSchema,
-  fmpSplitsSchema,
-  fmpStatementSchema,
-  mergeFmpStatements,
-  parseFmpDividends,
-  parseFmpQuote,
-  parseFmpSplits,
-} from "./parse";
+import { ProviderError, type FetchMeta, type ProviderDescriptor, type VerificationStatementsProvider } from "../types";
+import { fmpStatementSchema, mergeFmpStatements } from "./parse";
 
 /**
- * Financial Modeling Prep — primary provider for latest quotes, and an
- * independent source used to verify SEC filings and Tiingo price history.
+ * Financial Modeling Prep — OPTIONAL, supplementary only, free (Basic) plan.
  *
- * Plans (per FMP's pricing page): Basic is free, end-of-day only, 250 calls/day;
- * Starter and above include real-time US quotes (300+ calls/min). The plan is
- * declared with FMP_PLAN; nothing is labelled real-time unless a paid plan is declared.
+ * The application never requires a paid FMP plan. With FMP_API_KEY set, FMP's
+ * annual income, balance-sheet and cash-flow statements are used as an
+ * independent cross-check of the SEC figures. Nothing else is taken from FMP:
+ * quotes, daily history, dividends and splits come from free providers.
+ *
+ * Basic plan limits (FMP pricing page): 250 calls/day, annual statements with
+ * about 5 years of history, US symbols only. Quarterly statements are not
+ * requested. Any endpoint FMP answers with "not included in your plan"
+ * (HTTP 402 or an "Error Message") is recorded as NOT_ENTITLED and the
+ * cross-check pauses for 24 h; the rest of the app is unaffected.
  */
 export const FMP: ProviderDescriptor = {
   key: "fmp",
-  name: "Financial Modeling Prep",
-  capabilities: ["QUOTES", "PRICES", "VERIFICATION"],
+  name: "Financial Modeling Prep (optional, free Basic plan)",
+  capabilities: ["VERIFICATION"],
   markets: ["US"],
   baseUrl: "https://financialmodelingprep.com/stable",
   termsUrl: "https://site.financialmodelingprep.com/terms-of-service",
@@ -46,17 +30,13 @@ export const FMP: ProviderDescriptor = {
 };
 
 const BASE = "https://financialmodelingprep.com/stable";
-const PAID_PLANS = new Set(["starter", "premium", "ultimate", "enterprise"]);
+/** Annual periods requested on the Basic plan. */
+export const FMP_BASIC_ANNUAL_LIMIT = 5;
 
 function key(): string {
   const k = env().FMP_API_KEY;
   if (!k) throw new ProviderError(FMP.key, "NOT_CONFIGURED", "FMP_API_KEY is not set.");
   return k;
-}
-
-export function fmpPlanFeed(plan: string | undefined): QuoteFeed {
-  // Basic (free) does not document real-time delivery: treat as unconfirmed (shown as Delayed at best, never Live).
-  return plan && PAID_PLANS.has(plan) ? "REALTIME" : "UNKNOWN";
 }
 
 /** FMP uses "-" for share classes (BRK-B). */
@@ -71,7 +51,7 @@ async function get<T>(path: string, params: Record<string, string>, schema: { sa
   // FMP reports some errors as 200 + {"Error Message": "..."}.
   if (json && typeof json === "object" && !Array.isArray(json) && "Error Message" in json) {
     const msg = String((json as Record<string, unknown>)["Error Message"]).slice(0, 200);
-    throw new ProviderError(FMP.key, /subscription|plan|premium|restricted/i.test(msg) ? "NOT_ENTITLED" : "HTTP_ERROR", msg, res.status, res.endpoint);
+    throw new ProviderError(FMP.key, /subscription|plan|premium|restricted|upgrade/i.test(msg) ? "NOT_ENTITLED" : "HTTP_ERROR", msg, res.status, res.endpoint);
   }
   const parsed = schema.safeParse(json);
   if (!parsed.success) throw new ProviderError(FMP.key, "PARSE_ERROR", `Unexpected ${path} response`, res.status, res.endpoint);
@@ -79,59 +59,17 @@ async function get<T>(path: string, params: Record<string, string>, schema: { sa
   return { data: parsed.data, meta };
 }
 
-export const fmpQuotes: QuoteProvider = {
-  descriptor: FMP,
-  feed: () => fmpPlanFeed(env().FMP_PLAN),
-  // 60 s polling = 1,440 calls/day per open page: only paid plans have that headroom.
-  supportsAutoRefresh: () => fmpPlanFeed(env().FMP_PLAN) === "REALTIME",
-  async getQuote(security: SecurityRef) {
-    const symbol = fmpSymbol(security.ticker);
-    const { data, meta } = await get("quote", { symbol }, fmpQuoteSchema);
-    const quote = parseFmpQuote(data, { currency: "USD", feed: fmpQuotes.feed(), delayMinutes: null });
-    if (!quote) throw new ProviderError(FMP.key, "NOT_FOUND", `No quote for ${symbol}`, meta.httpStatus, meta.endpoint);
-    return { quote, meta };
-  },
-};
-
-export async function fmpProfile(security: SecurityRef) {
-  const { data, meta } = await get("profile", { symbol: fmpSymbol(security.ticker) }, fmpProfileSchema);
-  return { profile: data[0] ?? null, meta };
-}
-
 export const fmpStatements: VerificationStatementsProvider = {
   descriptor: FMP,
+  supportsPeriod: (period) => period === "annual",
   async getStatements(security, period) {
+    if (period !== "annual") throw new ProviderError(FMP.key, "NOT_SUPPORTED", "Quarterly statements are not requested on the free FMP plan.");
     const symbol = fmpSymbol(security.ticker);
-    const params = { symbol, period, limit: period === "annual" ? "15" : "20" };
+    const params = { symbol, period: "annual", limit: String(FMP_BASIC_ANNUAL_LIMIT) };
     const inc = await get("income-statement", params, fmpStatementSchema);
     const bal = await get("balance-sheet-statement", params, fmpStatementSchema);
     const cf = await get("cash-flow-statement", params, fmpStatementSchema);
     const merged = mergeFmpStatements(inc.data, bal.data, cf.data);
     return { ...merged, meta: { ...inc.meta, payloadHash: [inc.meta.payloadHash, bal.meta.payloadHash, cf.meta.payloadHash].join(":") } };
-  },
-};
-
-/** Daily history from FMP (used when Tiingo is not configured). */
-export const fmpPrices: PriceProvider = {
-  descriptor: FMP,
-  async getDailyHistory(security, range) {
-    const symbol = fmpSymbol(security.ticker);
-    const full = await get("historical-price-eod/full", { symbol, from: range.start, to: range.end }, fmpEodSchema);
-    const adj = await get("historical-price-eod/dividend-adjusted", { symbol, from: range.start, to: range.end }, fmpAdjEodSchema);
-    const divs = await get("dividends", { symbol }, fmpDividendsSchema);
-    const splits = await get("splits", { symbol }, fmpSplitsSchema);
-    const adjByDate = new Map(adj.data.map((r) => [r.date.slice(0, 10), r.adjClose ?? null]));
-    const bars = full.data
-      .map((r) => makeBar({ ...r, adjClose: adjByDate.get(r.date.slice(0, 10)) ?? null, currency: "USD" }))
-      .filter((b): b is NonNullable<typeof b> => b !== null)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const validated = validatePriceBars(bars);
-    return {
-      bars: validated.bars,
-      rejected: validated.rejected,
-      dividends: parseFmpDividends(divs.data, "USD"),
-      splits: parseFmpSplits(splits.data),
-      meta: full.meta,
-    };
   },
 };
