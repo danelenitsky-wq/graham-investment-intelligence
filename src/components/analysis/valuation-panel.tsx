@@ -1,20 +1,18 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatMetric, formatPercent } from "@/lib/format";
+import { formatCurrency, formatMetric } from "@/lib/format";
 import { lookup, type Dictionary, type Locale } from "@/lib/i18n";
 import type { SecurityAnalysis } from "@/server/analysis";
 import type { ValueEstimate } from "@/lib/valuation/graham";
 import { MethodologyBadge, StatusBadge } from "@/components/finance/badges";
 import { MetricRow } from "@/components/finance/metric-card";
 import { MEASURE_FORMAT } from "@/components/finance/metric-formats";
-import { Num, signTone } from "@/components/finance/num";
+import { Num } from "@/components/finance/num";
+import { ValuationDashboardView } from "@/components/valuation/valuation-dashboard";
 
-function EstimateCard({ e, a, dict, locale, currency, gated }: { e: ValueEstimate; a: SecurityAnalysis; dict: Dictionary; locale: Locale; currency: string; gated: boolean }) {
+function EstimateCard({ e, dict, locale, currency, gated }: { e: ValueEstimate; dict: Dictionary; locale: Locale; currency: string; gated: boolean }) {
   const meta = (dict.valuation.estimates as Record<string, { title: string; formula: string }>)[e.id] ?? { title: e.id, formula: "" };
-  const mos = e.status === "OK" && e.id !== "modern.bondYieldAdjusted" ? a.valuation.marginsOfSafety[e.id] : null;
-  const modernMos = e.id === "modern.bondYieldAdjusted" && e.status === "OK" && a.valuation.price !== null && e.value ? (e.value - a.valuation.price) / e.value : null;
-  const margin = mos ?? modernMos;
   return (
     <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -31,13 +29,7 @@ function EstimateCard({ e, a, dict, locale, currency, gated }: { e: ValueEstimat
       </div>
       <div className="flex items-baseline justify-between gap-2">
         <Num className="text-2xl font-semibold">{formatCurrency(locale, e.value, currency)}</Num>
-        {gated ? (
-          <span className="text-xs font-semibold text-negative">{dict.health.insufficient}</span>
-        ) : margin !== null && (
-          <span className="text-xs text-muted-foreground">
-            {dict.metrics.marginOfSafety}: <Num tone={signTone(margin)}>{formatPercent(locale, margin)}</Num>
-          </span>
-        )}
+        {gated && <span className="text-xs font-semibold text-negative">{dict.health.insufficient}</span>}
       </div>
       <div className="text-xs text-muted-foreground">{lookup(dict.reasons as Record<string, string>, e.reason)}</div>
       <div>
@@ -58,7 +50,7 @@ function EstimateCard({ e, a, dict, locale, currency, gated }: { e: ValueEstimat
   );
 }
 
-/** Valuation view (Graham 1973 + clearly separated modern extensions). `action` is the URL the growth form submits to. */
+/** Valuation view: dashboard (ceilings, Net-Net, intrinsic value, margin of safety), then Graham 1973 reference formulas and modern metrics. `action` is the URL the growth form submits to. */
 export function ValuationPanel({
   a,
   dict,
@@ -78,12 +70,12 @@ export function ValuationPanel({
   const m = a.modern.metrics;
   return (
     <div className="flex flex-col gap-5">
+      <p className="text-xs text-muted-foreground">{dict.valuationDashboard.disclaimer}</p>
+      <ValuationDashboardView dashboard={a.valuationDashboard} intrinsic={{ base: a.intrinsic.base, defaults: a.intrinsic.defaults }} marginOfSafetyTarget={a.settings.valuation.marginOfSafetyTarget} priceHistory={a.priceHistory} />
       <Card>
         <CardHeader>
-          <CardTitle>{dict.valuation.graham}</CardTitle>
-          <CardDescription>
-            {dict.metrics.price}: <Num>{formatCurrency(locale, a.valuation.price, currency)}</Num>
-          </CardDescription>
+          <CardTitle>{dict.valuationDashboard.reference.title}</CardTitle>
+          <CardDescription>{dict.valuationDashboard.reference.note}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <form action={action} method="get" className="flex flex-wrap items-end gap-2 rounded-lg bg-muted/50 p-3">
@@ -100,8 +92,8 @@ export function ValuationPanel({
             </span>
           </form>
           <div className="grid gap-3 md:grid-cols-3">
-            {a.valuation.estimates.map((e) => (
-              <EstimateCard key={e.id} e={e} a={a} dict={dict} locale={locale} currency={currency} gated={gated} />
+            {a.valuation.estimates.filter((e) => e.id === "graham.growthFormula").map((e) => (
+              <EstimateCard key={e.id} e={e} dict={dict} locale={locale} currency={currency} gated={gated} />
             ))}
           </div>
         </CardContent>
@@ -115,7 +107,7 @@ export function ValuationPanel({
           <CardDescription>{dict.valuation.modernNote}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-          <EstimateCard e={a.modern.bondYieldAdjusted} a={a} dict={dict} locale={locale} currency={currency} gated={gated} />
+          <EstimateCard e={a.modern.bondYieldAdjusted} dict={dict} locale={locale} currency={currency} gated={gated} />
           <div className="rounded-xl border bg-card p-4">
             <MetricRow label={dict.metrics.freeCashFlow} value={m.freeCashFlow} format="compactCurrency" currency={currency} locale={locale} toneBySign />
             <MetricRow label={dict.metrics.freeCashFlowPerShare} value={m.freeCashFlowPerShare} format="currency" currency={currency} locale={locale} />

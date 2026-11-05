@@ -119,6 +119,13 @@ export async function saveSettingsAction(_prev: ActionResult | null, formData: F
     },
     enterprisingLookbackYears: Number(formData.get("enterprisingLookbackYears")),
     priceHistoryYears: Number(formData.get("priceHistoryYears")),
+    valuation: {
+      marginOfSafetyTarget: Number(formData.get("marginOfSafetyTarget")) / 100,
+      intrinsicEnabled: formData.get("intrinsicEnabled") === "on",
+      discountRate: Number(formData.get("discountRate")) / 100,
+      terminalGrowth: Number(formData.get("terminalGrowth")) / 100,
+      normalizationYears: Number(formData.get("normalizationYears")),
+    },
   };
   const parsed = settingsSchema.safeParse(candidate);
   if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.path.join(".")).join(", "), code: "INVALID" };
