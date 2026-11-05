@@ -536,3 +536,41 @@ describe("SEC issuer profile", () => {
     expect(issuerProfile({ cik: "1", name: "X", sic: null, fiscalYearEnd: null })).toEqual({ sicCode: null, sicDescription: null, fiscalYearEndMonth: null });
   });
 });
+
+describe("equity tagged only including noncontrolling interests (JNJ-style 10-K)", () => {
+  // StockholdersEquity untagged; total equity incl. NCI 1.2B on a complete balance sheet.
+  const onlyTotal = healthyCompany(2024, 8, () => ({ stockholdersEquity: undefined, totalEquityInclNci: 1_200_000_000, preferredStock: 0 }));
+
+  it("uses total equity as shareholders' equity when no NCI line is tagged, and flags it", () => {
+    const r = evaluateDefensive({ annual: onlyTotal, price: price(60), isUtility: false });
+    const d7 = rule(r, "D7");
+    expect(d7.status).toBe("PASS");
+    expect(ruleValue(d7, "bookValuePerShare")).toBeCloseTo(120);
+    expect(d7.inputs.find((i) => i.key === "stockholdersEquity")?.note).toBe("inferredAbsent");
+    expect(d7.assumptions).toContain("AI-EQUITY-NCI");
+    const e7 = evaluateEnterprising({ annual: onlyTotal, price: price(60), isUtility: false }).rules.find((x) => x.id === "E7")!;
+    expect(e7.status).toBe("PASS");
+  });
+
+  it("subtracts a tagged noncontrolling interest", () => {
+    const withNci = healthyCompany(2024, 8, () => ({ stockholdersEquity: undefined, totalEquityInclNci: 1_200_000_000, noncontrollingInterest: 200_000_000 }));
+    const d7 = rule(evaluateDefensive({ annual: withNci, price: price(60), isUtility: false }), "D7");
+    expect(ruleValue(d7, "bookValuePerShare")).toBeCloseTo(100);
+    expect(d7.inputs.find((i) => i.key === "stockholdersEquity")?.note).toBe("derived");
+  });
+
+  it("stays INSUFFICIENT_DATA when no equity line at all is tagged", () => {
+    const none = healthyCompany(2024, 8, () => ({ stockholdersEquity: undefined }));
+    expect(rule(evaluateDefensive({ annual: none, price: price(60), isUtility: false }), "D7").reason).toBe("missingBookValue");
+  });
+
+  it("uses pre-tax income + interest as a flagged operating-income proxy for the risk indicator", () => {
+    const noOpInc = healthyCompany(2024, 8, () => ({ pretaxIncome: 50_000_000, interestExpense: 5_000_000 }));
+    const g = analyzeGraham({ annual: noOpInc, price: price(60), isUtility: false });
+    const risk = g.netNet.risks.find((x) => x.id === "operatingLosses")!;
+    expect(risk.level).toBe("LOW");
+    expect(risk.values.every((x) => x.value === 55_000_000 && x.note === "derived")).toBe(true);
+    const bare = analyzeGraham({ annual: healthyCompany(2024, 8), price: price(60), isUtility: false });
+    expect(bare.netNet.risks.find((x) => x.id === "operatingLosses")!.reason).toBe("missingOperatingIncome");
+  });
+});

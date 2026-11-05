@@ -293,6 +293,8 @@ export const grahamEn = {
     "AI-TOTAL-DEBT": "Total debt = long-term debt + debt due within a year.",
     "AI-TANGIBLE": "Net tangible assets = equity − preferred − goodwill − intangibles.",
     "AI-ABSENT-LINE": "A line not presented on a complete balance sheet is treated as none (flagged).",
+    "AI-EQUITY-NCI": "Shareholders' equity = total equity incl. noncontrolling interests − those interests (an untagged line counts as none, flagged).",
+    "AI-OPINC-PROXY": "When operating income is not tagged: pre-tax income + interest expense (proxy, flagged \"derived\").",
     "AI-LTD": "Long-term debt inferred as zero only when total liabilities = current liabilities.",
     "AI-SHARES": "Per-share values use period-end shares outstanding.",
     "AI-PRICE": "Current price = latest available price in the statements' currency.",

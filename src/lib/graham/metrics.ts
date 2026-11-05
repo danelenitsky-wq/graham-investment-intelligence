@@ -165,7 +165,8 @@ const reported = (v: number | undefined): Noted => (v === undefined ? { value: n
 export function hasCompleteBalanceSheet(a: AnnualFinancials | null): boolean {
   const v = a?.values;
   if (!v) return false;
-  return v.totalAssets !== undefined && v.stockholdersEquity !== undefined && (v.totalLiabilities !== undefined || v.liabilitiesAndEquity !== undefined);
+  const equity = v.stockholdersEquity ?? v.totalEquityInclNci;
+  return v.totalAssets !== undefined && equity !== undefined && (v.totalLiabilities !== undefined || v.liabilitiesAndEquity !== undefined);
 }
 
 /** A line that is not presented on a complete balance sheet is "none" (flagged); otherwise unknown. */
@@ -208,12 +209,40 @@ export function currentDebtNoted(a: AnnualFinancials | null, debtCurrentTag: str
   return { value: v.debtCurrent + stb.value, note: stb.note };
 }
 
+/**
+ * Equity attributable to the parent's shareholders (registry AI-EQUITY-NCI).
+ * Some issuers (e.g. Johnson & Johnson's recent 10-Ks) tag only total equity
+ * including noncontrolling interests. Then parent equity = total equity − NCI,
+ * with an untagged NCI line treated as not presented on that balance sheet.
+ */
+export function parentEquityNoted(a: AnnualFinancials | null): Noted {
+  const v = a?.values;
+  if (!v) return { value: null, note: "missing" };
+  if (v.stockholdersEquity !== undefined) return { value: v.stockholdersEquity, note: undefined };
+  if (v.totalEquityInclNci === undefined) return { value: null, note: "missing" };
+  if (v.noncontrollingInterest !== undefined) return { value: v.totalEquityInclNci - v.noncontrollingInterest, note: "derived" };
+  return hasCompleteBalanceSheet(a) ? { value: v.totalEquityInclNci, note: "inferredAbsent" } : { value: null, note: "missing" };
+}
+
 export function commonEquityNoted(a: AnnualFinancials | null): Noted {
-  const eq = a?.values.stockholdersEquity;
-  if (eq === undefined) return { value: null, note: "missing" };
+  const eq = parentEquityNoted(a);
+  if (eq.value === null) return { value: null, note: "missing" };
   const pref = absentMeansNone(a, "preferredStock");
   if (pref.value === null) return { value: null, note: "missing" };
-  return { value: eq - pref.value, note: pref.note };
+  return { value: eq.value - pref.value, note: eq.note ?? pref.note };
+}
+
+/**
+ * Operating income; when the issuer does not tag it (Johnson & Johnson stopped
+ * in 2015), a proxy of pre-tax income + interest expense, flagged "derived"
+ * (registry AI-OPINC-PROXY). Used only by the informational risk indicators.
+ */
+export function operatingIncomeNoted(a: AnnualFinancials | null): Noted {
+  const v = a?.values;
+  if (!v) return { value: null, note: "missing" };
+  if (v.operatingIncome !== undefined) return { value: v.operatingIncome, note: undefined };
+  if (v.pretaxIncome !== undefined && v.interestExpense !== undefined) return { value: v.pretaxIncome + v.interestExpense, note: "derived" };
+  return { value: null, note: "missing" };
 }
 
 export function sharesNoted(a: AnnualFinancials | null): Noted {

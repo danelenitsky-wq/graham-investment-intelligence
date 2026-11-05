@@ -38,6 +38,10 @@ they are still evaluated as specified and counted.
   debt alone already above 110% of NCA).
 - Untagged preferred stock, goodwill, intangibles and short-term borrowings count as "not
   presented" only on a complete balance sheet, and every such input is marked *inferred absent*.
+- Shareholders' equity falls back to total equity incl. noncontrolling interests − NCI when the
+  10-K tags only the total (Johnson & Johnson); flagged `AI-EQUITY-NCI`.
+- Operating income, when untagged, is proxied by pre-tax income + interest expense for the
+  informational risk indicators only (`AI-OPINC-PROXY`, flagged *derived*).
 - D4: 20 fiscal years of dividends. A year without dividends fails only when the daily history
   covers that whole fiscal year (or a 10-K reports zero). The default price history is 22 years.
 - Provider "dividends" ≥ 25% of the share price are excluded as non-cash distributions

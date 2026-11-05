@@ -24,6 +24,7 @@ import {
   average,
   byYear,
   commonEquityNoted,
+  parentEquityNoted,
   currentDebtNoted,
   earningsForCommon,
   eps,
@@ -202,6 +203,7 @@ export function makeRule(id: string, screen: ScreenKind, spec: RuleSpec): RuleRe
   const assumptions = new Set(spec.assumptions ?? []);
   if (spec.inputs.some((i) => i.note === "inferredAbsent")) assumptions.add("AI-ABSENT-LINE");
   if (spec.inputs.some((i) => i.note === "derived" && i.key === "totalLiabilities")) assumptions.add("X-TL");
+  if (spec.inputs.some((i) => i.note !== undefined && i.note !== "missing" && (i.key === "stockholdersEquity" || i.key === "commonEquity"))) assumptions.add("AI-EQUITY-NCI");
   return {
     id,
     screen,
@@ -333,6 +335,7 @@ function currentRatioRule(ctx: EvalContext, id: "E1", screen: ScreenKind, min: n
 /** Common equity and net tangible assets per share (registry AI-TANGIBLE, AI-SHARES). */
 export function perShareBook(ctx: EvalContext) {
   const a = ctx.last;
+  const parentEquity = parentEquityNoted(a);
   const equity = commonEquityNoted(a);
   const pref = absentMeansNone(a, "preferredStock");
   const goodwill = absentMeansNone(a, "goodwill");
@@ -341,7 +344,7 @@ export function perShareBook(ctx: EvalContext) {
   const bvps = equity.value !== null && shares.value !== null ? equity.value / shares.value : null;
   const tangible = equity.value !== null && goodwill.value !== null && intangibles.value !== null ? equity.value - goodwill.value - intangibles.value : null;
   const tbvps = tangible !== null && shares.value !== null ? tangible / shares.value : null;
-  return { equity, pref, goodwill, intangibles, shares, bvps, tangible, tbvps };
+  return { parentEquity, equity, pref, goodwill, intangibles, shares, bvps, tangible, tbvps };
 }
 
 // ───────────────────────────────── Defensive (Ch. 14) ─────────────────────────────────
@@ -572,7 +575,7 @@ export function defensiveFromContext(ctx: EvalContext): ScreenResult {
       combinator: "ANY",
       inputs: [
         input("price", ctx.price, "perShare"),
-        input("stockholdersEquity", ctx.last!.values.stockholdersEquity ?? null, "currency", L),
+        input("stockholdersEquity", b.parentEquity, "currency", L),
         input("preferredStock", b.pref, "currency", L),
         input("sharesOutstanding", b.shares, "shares", L),
         input("bookValuePerShare", b.bvps, "perShare", L),
@@ -752,7 +755,7 @@ export function enterprisingFromContext(ctx: EvalContext): ScreenResult {
       formula,
       inputs: [
         input("price", ctx.price, "perShare"),
-        input("stockholdersEquity", ctx.last!.values.stockholdersEquity ?? null, "currency", L),
+        input("stockholdersEquity", b.parentEquity, "currency", L),
         input("preferredStock", b.pref, "currency", L),
         input("goodwill", b.goodwill, "currency", L),
         input("intangibleAssets", b.intangibles, "currency", L),

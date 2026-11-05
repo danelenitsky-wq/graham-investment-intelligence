@@ -11,7 +11,7 @@
  * application's thresholds and never change a rule status.
  */
 import { average, eps, type Num } from "./metrics";
-import { absentMeansNone, currentDebtNoted, longTermDebtNoted, sharesNoted, totalLiabilitiesNoted, type Noted } from "./metrics";
+import { absentMeansNone, commonEquityNoted, currentDebtNoted, longTermDebtNoted, operatingIncomeNoted, sharesNoted, totalLiabilitiesNoted, type Noted } from "./metrics";
 import { check, filingSources, fyLabel, input, isApplicable, makeRule, notApplicable, periodLabel, priceSources, summarize, type EvalContext } from "./rules";
 import type { InputValue, ScreenResult, SourceRef } from "./types";
 
@@ -150,7 +150,8 @@ export function riskIndicators(ctx: EvalContext): RiskIndicator[] {
   // Operating losses over five years.
   {
     const years = Array.from({ length: R.operatingLossYears }, (_, i) => L - R.operatingLossYears + 1 + i);
-    const vals = years.map((y) => [y, v(ctx.map.get(y)?.values.operatingIncome)] as const);
+    const noted = years.map((y) => [y, operatingIncomeNoted(ctx.map.get(y) ?? null)] as const);
+    const vals = noted.map(([y, n]) => [y, n.value] as const);
     const known = vals.filter(([, x]) => x !== null);
     const losses = known.filter(([, x]) => x! < 0).map(([y]) => y);
     const latestLoss = (vals[vals.length - 1][1] ?? 0) < 0;
@@ -164,7 +165,7 @@ export function riskIndicators(ctx: EvalContext): RiskIndicator[] {
     out.push({
       id: "operatingLosses",
       level,
-      values: vals.map(([y, x]) => input("operatingIncome", x, "currency", y)),
+      values: noted.map(([y, n]) => input("operatingIncome", n, "currency", y)),
       reason,
       reasonParams: { lossYears: losses.join(", ") || "—", known: known.length, years: R.operatingLossYears },
       period: periodLabel(ctx, years),
@@ -313,10 +314,9 @@ export function buildTrends(ctx: EvalContext, providerDividends: Map<number, num
     const cl = v(x.currentLiabilities);
     const tl = totalLiabilitiesNoted(a).value;
     const shares = sharesNoted(a).value;
-    const pref = absentMeansNone(a, "preferredStock").value;
     const gw = absentMeansNone(a, "goodwill").value;
     const intang = absentMeansNone(a, "intangibleAssets").value;
-    const equity = x.stockholdersEquity !== undefined && pref !== null ? x.stockholdersEquity - pref : null;
+    const equity = commonEquityNoted(a).value;
     const tangible = equity !== null && gw !== null && intang !== null ? equity - gw - intang : null;
     const ncav = ca !== null && tl !== null ? ca - tl : null;
     const per = (n: Num) => (n !== null && shares !== null ? n / shares : null);
@@ -324,7 +324,7 @@ export function buildTrends(ctx: EvalContext, providerDividends: Map<number, num
       fiscalYear: y,
       revenue: v(x.revenue),
       netIncome: v(x.netIncome),
-      operatingIncome: v(x.operatingIncome),
+      operatingIncome: operatingIncomeNoted(a).value,
       eps: eps(a),
       eps3yAvg: average([y - 2, y - 1, y].map((k) => eps(ctx.map.get(k)))),
       dividendsPerShare: v(x.dividendsPerShare),

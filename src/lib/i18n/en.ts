@@ -299,6 +299,7 @@ export const en = {
     preferredStock: "Preferred stock",
     stockholdersEquity: "Stockholders' equity",
     totalEquityInclNci: "Equity incl. NCI",
+    noncontrollingInterest: "Noncontrolling interests",
     liabilitiesAndEquity: "Liabilities & equity",
     sharesOutstanding: "Shares outstanding",
     operatingCashFlow: "Operating cash flow",

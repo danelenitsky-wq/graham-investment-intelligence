@@ -170,6 +170,12 @@ export const CONCEPTS = {
     instant: true,
     candidates: ["us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
   },
+  noncontrollingInterest: {
+    statement: "BALANCE_SHEET",
+    unit: "currency",
+    instant: true,
+    candidates: ["us-gaap:MinorityInterest"],
+  },
   liabilitiesAndEquity: {
     statement: "BALANCE_SHEET",
     unit: "currency",

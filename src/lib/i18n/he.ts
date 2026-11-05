@@ -299,6 +299,7 @@ export const he: Dictionary = {
     preferredStock: "מניות בכורה",
     stockholdersEquity: "הון עצמי",
     totalEquityInclNci: "הון כולל זכויות מיעוט",
+    noncontrollingInterest: "זכויות שאינן מקנות שליטה",
     liabilitiesAndEquity: "התחייבויות והון",
     sharesOutstanding: "מניות במחזור",
     operatingCashFlow: "תזרים מפעילות שוטפת",
