@@ -96,8 +96,9 @@ describe("quote service", () => {
     expect(v.decision).toBe("NO_CACHE");
     expect(v.provider?.key).toBe("fake-primary");
     expect(v.price).toBe(100);
-    expect(v.sourceTimestamp).toBe(sessionTimestamp());
-    expect(["LIVE", "LAST_CLOSE"]).toContain(v.status);
+    // While the market is open the fake quote is stamped "now", so allow the few ms the call took.
+    expect(Math.abs(Date.parse(v.sourceTimestamp!) - Date.parse(sessionTimestamp()))).toBeLessThan(5_000);
+    expect(["FRESH", "LAST_CLOSE"]).toContain(v.status);
     expect(v.verification.status).toBe("VERIFIED");
     expect(calls["fake-primary"]).toBe(1);
     const fetches = await db.dataFetch.findMany({ where: { securityId, dataset: "quote" } });

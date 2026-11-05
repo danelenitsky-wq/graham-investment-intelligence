@@ -65,6 +65,9 @@ export function DataHealthPanel({ a, dict, locale }: { a: SecurityAnalysis; dict
                   {h.latestFiling.accessionNumber} <ExternalLink className="size-3" />
                 </a>
               )}
+              <span className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid="statements-status">
+                {dict.health.statementsStatus}: <QuoteStatusBadge status={h.fundamentalsStatus.status} dict={dict} />
+              </span>
               <span className="text-xs text-muted-foreground">
                 {dict.health.lastFilingCheck}: <bdi dir="ltr">{ts(h.lastFilingCheckAt)}</bdi>
               </span>

@@ -5,8 +5,11 @@ import type { NormalizedAnnualPeriod, SplitEvent } from "@/lib/normalization/sta
 import { normalizeCompanyFacts } from "@/lib/normalization/statements";
 import { DEV_EXCHANGE, DEV_FIXTURE, FIXTURE_COMPANIES, fixtureCompanyFacts, fixturePriceHistory } from "@/lib/providers/dev-fixture";
 import { SEC_EDGAR } from "@/lib/providers/sec-edgar";
+import { filingUrl } from "@/lib/providers/sec-edgar/parse";
 import { FMP } from "@/lib/providers/fmp";
 import { TIINGO } from "@/lib/providers/tiingo";
+import { FINNHUB } from "@/lib/providers/finnhub";
+import { TWELVE_DATA } from "@/lib/providers/twelve-data";
 import { TASE } from "@/lib/providers/tase";
 import { fundamentalsProviderFor, priceProviderFor, referenceProvider } from "@/lib/providers/registry";
 import { ProviderError, type FetchMeta, type MarketCode, type ProviderDescriptor } from "@/lib/providers/types";
@@ -15,7 +18,7 @@ import { db } from "./db";
 import { env } from "./env";
 import { getSettings } from "./settings";
 import { saveAnalysisSnapshots } from "./analysis";
-import { verifyFundamentals } from "./verification";
+import { verifyDividends, verifyFundamentals } from "./verification";
 
 export const EXCHANGES = [
   { code: "NASDAQ", mic: "XNAS", name: "Nasdaq", nameHe: "נאסד\"ק", market: "US", country: "US", currency: "USD", timezone: "America/New_York" },
@@ -31,7 +34,7 @@ export async function ensureReferenceData() {
   for (const e of EXCHANGES) {
     await db.exchange.upsert({ where: { code: e.code }, create: { ...e }, update: { name: e.name, nameHe: e.nameHe } });
   }
-  for (const d of [SEC_EDGAR, FMP, TIINGO, TASE]) await ensureSource(d);
+  for (const d of [SEC_EDGAR, TIINGO, FINNHUB, TWELVE_DATA, FMP, TASE]) await ensureSource(d);
 }
 
 const KIND: Record<string, "REFERENCE" | "FUNDAMENTALS" | "PRICES"> = {
@@ -121,6 +124,7 @@ async function persistPeriods(
   fetchId: string,
   periods: NormalizedAnnualPeriod[],
   periodType: "ANNUAL" | "QUARTERLY" = "ANNUAL",
+  provenance: { cik: string | null; retrievedAt: Date } = { cik: null, retrievedAt: new Date() },
 ) {
   for (const p of periods) {
     for (const st of STATEMENT_TYPES) {
@@ -160,6 +164,8 @@ async function persistPeriods(
             accessionNumber: v.accessionNumber,
             filedAt: new Date(v.filedAt + "T00:00:00Z"),
             splitAdjusted: v.splitAdjusted,
+            sourceUrl: provenance.cik && v.accessionNumber ? filingUrl(provenance.cik, v.accessionNumber) : null,
+            retrievedAt: provenance.retrievedAt,
           })),
         });
       });
@@ -208,7 +214,7 @@ async function persistCorporateActions(
     const exDate = new Date(r.exDate + "T00:00:00Z");
     await db.corporateAction.upsert({
       where: { securityId_type_exDate_sourceId: { securityId, type: r.type, exDate, sourceId } },
-      create: { securityId, sourceId, fetchId, type: r.type, exDate, amount: r.amount, ratio: r.ratio, currency: r.currency },
+      create: { securityId, sourceId, fetchId, type: r.type, exDate, amount: r.amount, ratio: r.ratio, currency: r.currency, verificationStatus: "SINGLE_SOURCE" },
       update: { amount: r.amount, ratio: r.ratio, fetchId },
     });
   }
@@ -237,6 +243,8 @@ export interface RefreshOutcome {
   prices: DatasetOutcome & { count?: number };
   fundamentals: DatasetOutcome & { periods?: number; quarters?: number };
   verification?: { status: "SUCCESS" | "FAILED" | "SKIPPED"; conflicts?: number; compared?: number; error?: string; code?: string };
+  /** Tiingo dividends cross-checked against SEC "dividends declared per share" by fiscal year. */
+  dividends?: { verifiedYears: number; comparedYears: number };
 }
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
@@ -309,11 +317,15 @@ export async function refreshFundamentals(securityId: string, splits?: SplitEven
     // The split list is part of the input: a new split changes per-share values even when the filing payload did not change.
     const inputHash = meta.payloadHash ? `${meta.payloadHash}|splits:${JSON.stringify(splits ?? [])}` : null;
     const unchanged = inputHash !== null && inputHash === previousHash;
+    const provenance = { cik: ref.cik, retrievedAt: new Date(meta.fetchedAt) };
     if (!unchanged) {
-      await persistPeriods(securityId, fSource.id, ff.id, result.periods, "ANNUAL");
-      if (quarterly) await persistPeriods(securityId, fSource.id, ff.id, quarterly.periods, "QUARTERLY");
+      await persistPeriods(securityId, fSource.id, ff.id, result.periods, "ANNUAL", provenance);
+      if (quarterly) await persistPeriods(securityId, fSource.id, ff.id, quarterly.periods, "QUARTERLY", provenance);
       await recordNormalizationWarnings(securityId, fSource.id, result.warnings);
       if (result.currency) await db.security.update({ where: { id: securityId }, data: { reportingCurrency: result.currency } });
+    } else {
+      // Same filings confirmed again: the retrieval time moves, the filing dates and periods do not.
+      await db.financialLineItem.updateMany({ where: { statement: { securityId, sourceId: fSource.id } }, data: { retrievedAt: provenance.retrievedAt } });
     }
     await finishFetch(ff.id, {
       status: "SUCCESS",
@@ -343,6 +355,7 @@ export async function refreshSecurity(securityId: string): Promise<RefreshOutcom
   const outcome: RefreshOutcome = { prices: prices.outcome, fundamentals };
   if (fundamentals.status === "SUCCESS" || fundamentals.status === "UNCHANGED") {
     outcome.verification = await verifyFundamentals(securityId);
+    outcome.dividends = await verifyDividends(securityId);
   }
   if (prices.outcome.status === "SUCCESS" || fundamentals.status === "SUCCESS") {
     await saveAnalysisSnapshots(securityId);

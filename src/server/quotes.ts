@@ -4,7 +4,7 @@ import { calendarForExchange, sessionCloseTime, sessionInfo, zonedTimeToUtc, typ
 import { classifyQuote, decideQuoteFetch, type FetchDecisionReason, type QuoteFeed, type QuoteReason, type QuoteStatus } from "@/lib/freshness/quote";
 import { quoteProvidersFor } from "@/lib/providers/registry";
 import { ProviderError, type MarketCode, type QuoteProvider } from "@/lib/providers/types";
-import { verifyQuote, type VerificationStatus } from "@/lib/verification";
+import { quoteCloses, verifyQuote, type VerificationStatus } from "@/lib/verification";
 import { db } from "./db";
 import { ensureSource, failFetch, finishFetch, startFetch } from "./ingestion";
 
@@ -107,7 +107,7 @@ async function loadQuoteView(securityId: string, { force = false, now = new Date
         // Cross-check with another provider that has not just failed in this call.
         const secondary = providers.find((p, j) => j !== i && !attempts.some((a) => a.provider === p.descriptor.key && !a.ok));
         if (secondary && (force || now.getTime() - lastVerified > VERIFY_EVERY_MS)) {
-          fresh = await crossCheck(fresh, secondary, ref, securityId, attempts);
+          fresh = await crossCheck(fresh, secondary, ref, securityId, attempts, calendar);
         }
         break;
       }
@@ -128,7 +128,13 @@ async function loadQuoteView(securityId: string, { force = false, now = new Date
     : latest
       ? { price: Number(latest.price), sourceTimestamp: latest.sourceTimestamp.toISOString(), retrievedAt: latest.retrievedAt.toISOString(), feed: latest.feed, delayMinutes: latest.delayMinutes }
       : null;
-  const cls = classifyQuote({ quote: observation, session, now, lastFetchFailed: Boolean(lastFetchFailed) && !useEod });
+  const cls = classifyQuote({
+    quote: observation,
+    session,
+    now,
+    lastFetchFailed: Boolean(lastFetchFailed) && !useEod,
+    conflicted: !useEod && latest?.verificationStatus === "CONFLICT",
+  });
 
   const [lastOk, lastFail, derived] = await Promise.all([
     db.dataFetch.findFirst({ where: { securityId, dataset: "quote", status: "SUCCESS" }, orderBy: { startedAt: "desc" } }),
@@ -247,6 +253,7 @@ async function crossCheck(
   ref: { ticker: string; exchangeCode: string; cik: string | null },
   securityId: string,
   attempts: QuoteAttempt[],
+  calendar: ReturnType<typeof calendarForExchange>,
 ) {
   const source = await ensureSource(secondary.descriptor);
   const fetch = await startFetch(source.id, "quote-verification", secondary.descriptor.baseUrl, securityId);
@@ -254,9 +261,11 @@ async function crossCheck(
     const { quote, meta } = await secondary.getQuote(ref);
     await finishFetch(fetch.id, { status: "SUCCESS", endpoint: meta.endpoint, httpStatus: meta.httpStatus, payloadHash: meta.payloadHash, recordCount: 1 });
     attempts.push({ provider: secondary.descriptor.key, fetchId: fetch.id, ok: true, httpStatus: meta.httpStatus, code: null, error: null, at: meta.fetchedAt });
+    const p = { price: Number(primary.price), previousClose: n(primary.previousClose), sourceTimestamp: primary.sourceTimestamp.toISOString(), feed: primary.feed };
+    // Closes are matched by trading date, so a delayed intraday quote is never compared with a different day's close.
     const v = verifyQuote(
-      { provider: primary.source.key, price: Number(primary.price), sourceTimestamp: primary.sourceTimestamp.toISOString(), previousClose: n(primary.previousClose) },
-      { provider: secondary.descriptor.key, price: quote.price, sourceTimestamp: quote.sourceTimestamp, previousClose: quote.previousClose },
+      { provider: primary.source.key, ...p, closes: quoteCloses(p, calendar) },
+      { provider: secondary.descriptor.key, price: quote.price, sourceTimestamp: quote.sourceTimestamp, previousClose: quote.previousClose, closes: quoteCloses(quote, calendar) },
     );
     const note = v.comparedField
       ? `${v.comparedField}: ${primary.source.key} ${v.primary} vs ${secondary.descriptor.key} ${v.secondary} (Δ ${((v.relDiff ?? 0) * 100).toFixed(2)}%)`
@@ -266,7 +275,7 @@ async function crossCheck(
       data: {
         securityId,
         dataset: "quote",
-        metric: v.comparedField ?? "price",
+        metric: v.comparedField?.startsWith("close:") ? "close" : (v.comparedField ?? "price"),
         primarySource: primary.source.key,
         primaryValue: v.primary,
         primaryReference: primary.sourceTimestamp.toISOString(),

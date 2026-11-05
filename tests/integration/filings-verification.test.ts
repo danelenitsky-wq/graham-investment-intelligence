@@ -74,6 +74,7 @@ const { refreshFundamentals } = await import("@/server/ingestion");
 const { checkFilings } = await import("@/server/filings");
 const { verifyFundamentals } = await import("@/server/verification");
 const { getSecurityAnalysis, saveAnalysisSnapshots } = await import("@/server/analysis");
+const { getMetricProvenance } = await import("@/server/provenance");
 
 let securityId = "";
 const filing = (accessionNumber: string, filingDate: string): FilingRef => ({ accessionNumber, form: "10-K", filingDate, acceptedAt: null, reportDate: "2025-12-31", url: "https://www.sec.gov/Archives/edgar/data/1/x/" });
@@ -150,5 +151,26 @@ describe("financial statements freshness", () => {
     expect(a.health.conflicts[0]).toMatchObject({ metric: "netIncome", primaryValue: 120_000_000, secondaryValue: 90_000_000 });
     // Earlier checks are superseded, not deleted.
     expect(await db.dataVerification.count({ where: { securityId, resolvedAt: { not: null } } })).toBeGreaterThan(0);
+    expect(a.health.fundamentalsStatus.status).toBe("CONFLICTED");
+  });
+
+  it("provenance: every stored figure carries provider, source URL, period, filing date, retrieval time, unit and statuses", async () => {
+    const p = await getMetricProvenance(securityId);
+    const sec = p.records.filter((r) => r.provider.key === "sec-edgar");
+    expect(sec.length).toBeGreaterThan(0);
+    for (const r of sec) {
+      expect(r.sourceUrl).toBe("https://www.sec.gov/Archives/edgar/data/1/000000000126000099/");
+      expect(r.periodEnd).toBe("2025-12-31");
+      expect(r.publishedAt).toBe("2026-02-15");
+      expect(r.retrievedAt).not.toBeNull();
+      // Retrieval time is now; the reporting period is a year earlier — never confused.
+      expect(Date.parse(r.retrievedAt!)).toBeGreaterThan(Date.parse(r.periodEnd!) + 300 * 86_400_000);
+      expect(r.unit).toBeTruthy();
+      expect(r.verificationStatus).toBeTruthy();
+    }
+    const ni = sec.find((r) => r.metric === "netIncome")!;
+    expect(ni).toMatchObject({ currency: "USD", unit: "USD", periodType: "ANNUAL", fiscalYear: 2025, form: "10-K", verificationStatus: "CONFLICT", status: "CONFLICTED" });
+    expect(sec.find((r) => r.metric === "totalAssets")!.periodType).toBe("INSTANT");
+    expect(p.coverage.annualYears).toEqual({ count: 1, first: 2025, last: 2025 });
   });
 });

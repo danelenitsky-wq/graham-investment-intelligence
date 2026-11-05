@@ -2,20 +2,23 @@
  * Quote freshness engine (pure).
  *
  * Status vocabulary shown to the user:
- * - LIVE        provider-confirmed real-time feed, market open, quote ≤ liveMaxAgeSeconds old
+ * - FRESH       provider-confirmed real-time feed, market open, quote ≤ liveMaxAgeSeconds old
  * - DELAYED     market open, quote within the feed's documented delay (or feed not confirmed real-time)
  * - LAST_CLOSE  market closed (or just opened) and the quote belongs to the most recent session close
  * - CACHED      the latest provider request failed; showing the last verified value, still recent
  * - STALE       older than the above windows allow, or its timestamp cannot be trusted
  * - UNAVAILABLE no quote has ever been retrieved
+ * - CONFLICTED  an independent provider disagrees with this value beyond tolerance
  *
- * A quote is never LIVE unless its feed is REALTIME, which adapters set only
- * when the provider documents real-time delivery for the configured plan.
+ * A quote is never FRESH unless its feed is REALTIME, which adapters set only
+ * when the provider documents real-time delivery for the configured plan. None
+ * of the free plans used by default is documented that way, so with the
+ * free-first setup the best intraday status is DELAYED.
  */
 import { localParts, type SessionInfo } from "@/lib/market/calendar";
 
 export type QuoteFeed = "REALTIME" | "DELAYED" | "EOD" | "UNKNOWN";
-export type QuoteStatus = "LIVE" | "DELAYED" | "LAST_CLOSE" | "CACHED" | "STALE" | "UNAVAILABLE";
+export type QuoteStatus = "FRESH" | "DELAYED" | "LAST_CLOSE" | "CACHED" | "STALE" | "UNAVAILABLE" | "CONFLICTED";
 
 export interface QuoteObservation {
   price: number;
@@ -66,7 +69,8 @@ export type QuoteReason =
   | "NOT_LAST_SESSION"
   | "CALENDAR_UNKNOWN"
   | "PROVIDER_FAILED_USING_CACHE"
-  | "CACHE_TOO_OLD";
+  | "CACHE_TOO_OLD"
+  | "CROSS_CHECK_CONFLICT";
 
 export interface QuoteClassification {
   status: QuoteStatus;
@@ -82,10 +86,19 @@ export interface ClassifyInput {
   now: Date;
   /** The most recent provider request for this quote failed. */
   lastFetchFailed: boolean;
+  /** An independent provider disagreed with this value (open CONFLICT). */
+  conflicted?: boolean;
   thresholds?: QuoteThresholds;
 }
 
-export function classifyQuote({ quote, session, now, lastFetchFailed, thresholds = DEFAULT_QUOTE_THRESHOLDS }: ClassifyInput): QuoteClassification {
+export function classifyQuote(input: ClassifyInput): QuoteClassification {
+  const c = classifyQuoteTime(input);
+  // A conflict outranks every time-based status except a missing quote: the value itself is in doubt.
+  if (input.conflicted && c.status !== "UNAVAILABLE") return { ...c, status: "CONFLICTED", reasons: [...c.reasons, "CROSS_CHECK_CONFLICT"] };
+  return c;
+}
+
+function classifyQuoteTime({ quote, session, now, lastFetchFailed, thresholds = DEFAULT_QUOTE_THRESHOLDS }: ClassifyInput): QuoteClassification {
   if (!quote) return { status: "UNAVAILABLE", baseStatus: "UNAVAILABLE", reasons: ["NO_QUOTE"], ageSeconds: null };
   const ts = Date.parse(quote.sourceTimestamp);
   const ageSeconds = Math.round((now.getTime() - ts) / 1000);
@@ -110,7 +123,7 @@ export function classifyQuote({ quote, session, now, lastFetchFailed, thresholds
     base = quote.feed !== "EOD" && age <= delayWindow ? "DELAYED" : "STALE";
   } else if (session.state === "OPEN") {
     if (quote.feed === "REALTIME" && age <= thresholds.liveMaxAgeSeconds) {
-      base = "LIVE";
+      base = "FRESH";
       reasons.push("REALTIME_FRESH");
     } else if (quote.feed !== "EOD" && age <= delayWindow) {
       base = "DELAYED";
@@ -153,7 +166,7 @@ export function classifyQuote({ quote, session, now, lastFetchFailed, thresholds
 
 /** Statuses good enough to feed downstream analysis. */
 export function isUsableQuoteStatus(s: QuoteStatus): boolean {
-  return s === "LIVE" || s === "DELAYED" || s === "LAST_CLOSE" || s === "CACHED";
+  return s === "FRESH" || s === "DELAYED" || s === "LAST_CLOSE" || s === "CACHED";
 }
 
 // ─────────────────────────────── Cache policy ───────────────────────────────

@@ -1,10 +1,12 @@
 import "server-only";
 import { env } from "@/server/env";
 import { DEV_FIXTURE } from "./dev-fixture";
-import { FMP, fmpPrices, fmpQuotes, fmpStatements } from "./fmp";
+import { FINNHUB, finnhubQuotes } from "./finnhub";
+import { FMP, fmpStatements } from "./fmp";
 import { SEC_EDGAR, secEdgarFilings, secEdgarFundamentals, secEdgarReference } from "./sec-edgar";
 import { TASE, taseFundamentals, tasePrices } from "./tase";
 import { TIINGO, tiingoPrices, tiingoQuotes } from "./tiingo";
+import { TWELVE_DATA, twelveDataQuotes } from "./twelve-data";
 import type {
   FilingsProvider,
   FundamentalsProvider,
@@ -17,7 +19,11 @@ import type {
   VerificationStatementsProvider,
 } from "./types";
 
-export const ALL_PROVIDERS: ProviderDescriptor[] = [SEC_EDGAR, FMP, TIINGO, TASE, DEV_FIXTURE];
+/**
+ * Free-first: every provider here works on a free plan. FMP is optional and is
+ * only used, on its free Basic plan, to cross-check SEC statements.
+ */
+export const ALL_PROVIDERS: ProviderDescriptor[] = [SEC_EDGAR, TIINGO, FINNHUB, TWELVE_DATA, FMP, TASE, DEV_FIXTURE];
 
 function isSet(name: string): boolean {
   const e = env();
@@ -28,6 +34,10 @@ function isSet(name: string): boolean {
       return Boolean(e.TIINGO_API_KEY);
     case "FMP_API_KEY":
       return Boolean(e.FMP_API_KEY);
+    case "FINNHUB_API_KEY":
+      return Boolean(e.FINNHUB_API_KEY);
+    case "TWELVE_DATA_API_KEY":
+      return Boolean(e.TWELVE_DATA_API_KEY);
     case "ENABLE_DEV_FIXTURES":
       return e.ENABLE_DEV_FIXTURES;
     case "TASE_API_KEY":
@@ -52,7 +62,12 @@ export function providerStatuses(): ProviderStatus[] {
 /** Declared subscription plans (labels only, for display). */
 export function providerPlans(): Record<string, string | null> {
   const e = env();
-  return { fmp: e.FMP_API_KEY ? (e.FMP_PLAN ?? "basic") : null, tiingo: e.TIINGO_API_KEY ? (e.TIINGO_PLAN ?? "free") : null };
+  return {
+    tiingo: e.TIINGO_API_KEY ? (e.TIINGO_PLAN ?? "free") : null,
+    finnhub: e.FINNHUB_API_KEY ? "free" : null,
+    "twelve-data": e.TWELVE_DATA_API_KEY ? "free" : null,
+    fmp: e.FMP_API_KEY ? "basic" : null,
+  };
 }
 
 export function referenceProvider(): ReferenceProvider {
@@ -63,17 +78,21 @@ export function fundamentalsProviderFor(market: MarketCode): FundamentalsProvide
   return market === "IL" ? taseFundamentals : secEdgarFundamentals;
 }
 
-/** Daily history: Tiingo when configured (30+ years, dividends, splits), else FMP. */
+/** Daily history, dividends and splits: Tiingo end-of-day (free plan, 30+ years). */
 export function priceProviderFor(market: MarketCode): PriceProvider {
   if (market === "IL") return tasePrices;
-  if (!isConfigured(TIINGO) && isConfigured(FMP)) return fmpPrices;
   return tiingoPrices;
 }
 
-/** Ordered latest-quote providers: primary first, then fallbacks. Empty when none is configured. */
+/**
+ * Ordered latest-quote providers: primary first, then fallbacks; the next one
+ * also cross-checks the primary. Intraday sources first (Finnhub, Twelve Data,
+ * both free plans, shown as Delayed), then Tiingo's official last close.
+ * Empty when none is configured.
+ */
 export function quoteProvidersFor(market: MarketCode): QuoteProvider[] {
   if (market !== "US") return [];
-  return [fmpQuotes, tiingoQuotes].filter((p) => isConfigured(p.descriptor));
+  return [finnhubQuotes, twelveDataQuotes, tiingoQuotes].filter((p) => isConfigured(p.descriptor));
 }
 
 /** Independent statements source used to verify primary filings. */

@@ -112,6 +112,8 @@ export interface FilingsProvider {
 /** Independent statements source used to verify primary filings. */
 export interface VerificationStatementsProvider {
   descriptor: ProviderDescriptor;
+  /** Periods the configured plan can serve (default: both). */
+  supportsPeriod?(period: "annual" | "quarter"): boolean;
   getStatements(security: SecurityRef, period: "annual" | "quarter"): Promise<{ periods: SourcedPeriod[]; currency: string | null; meta: FetchMeta }>;
 }
 

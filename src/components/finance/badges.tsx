@@ -74,10 +74,10 @@ export function DevFixtureBanner({ dict }: { dict: Dictionary }) {
 }
 
 export function QuoteStatusBadge({ status, dict }: { status: QuoteStatus; dict: Dictionary }) {
-  const variant = status === "LIVE" ? "positive" : status === "DELAYED" || status === "LAST_CLOSE" ? "info" : status === "CACHED" ? "warning" : status === "STALE" ? "negative" : "muted";
+  const variant = status === "FRESH" ? "positive" : status === "DELAYED" || status === "LAST_CLOSE" ? "info" : status === "CACHED" ? "warning" : status === "STALE" || status === "CONFLICTED" ? "negative" : "muted";
   return (
     <Badge variant={variant} title={dict.market.statusHelp[status]} data-quote-status={status}>
-      {status === "LIVE" ? <Radio /> : <Clock />} {dict.market.status[status]}
+      {status === "FRESH" ? <Radio /> : <Clock />} {dict.market.status[status]}
     </Badge>
   );
 }
