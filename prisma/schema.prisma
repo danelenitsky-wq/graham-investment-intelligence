@@ -1,0 +1,438 @@
+// Graham Investment Intelligence — database schema
+//
+// Design notes
+// - Single-user personal research platform: no User model yet. Portfolios,
+//   watchlists and settings are owned by the installation.
+// - Every market/financial fact carries provenance: the DataSource it came from
+//   and the DataFetch (ingestion run) that wrote it. Rows from development
+//   fixtures are marked through DataSource.isDevFixture and must never be
+//   presented as real market data.
+// - Monetary values use Decimal to avoid binary floating point drift in storage.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Reference data ─────────────────────────────
+
+enum Market {
+  US
+  IL // Tel Aviv Stock Exchange (TASE) — architecture ready, no provider yet
+  OTHER
+}
+
+enum AssetType {
+  COMMON_STOCK
+  PREFERRED_STOCK
+  ADR
+  ETF
+  REIT
+  OTHER
+}
+
+model Exchange {
+  id         String     @id @default(cuid())
+  code       String     @unique // e.g. NASDAQ, NYSE, TASE
+  mic        String?    @unique // ISO 10383 market identifier, e.g. XNAS, XTAE
+  name       String
+  nameHe     String?
+  market     Market
+  country    String // ISO 3166-1 alpha-2
+  currency   String // ISO 4217 trading currency (TASE quotes in ILA/agorot)
+  timezone   String // IANA timezone
+  securities Security[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model Security {
+  id                 String    @id @default(cuid())
+  ticker             String
+  exchangeId         String
+  exchange           Exchange  @relation(fields: [exchangeId], references: [id])
+  name               String
+  nameHe             String?
+  assetType          AssetType @default(COMMON_STOCK)
+  // Identifiers: US issuers use SEC CIK; TASE uses the TASE security number.
+  cik                String? // zero-padded 10 digit SEC Central Index Key
+  isin               String?
+  taseSecurityNumber String?
+  figi               String?
+  sector             String?
+  industry           String?
+  sicCode            String?
+  isUtility          Boolean   @default(false) // Graham applies different tests to utilities
+  reportingCurrency  String? // currency of financial statements
+  fiscalYearEndMonth Int? // 1-12
+  isActive           Boolean   @default(true)
+  // Where the reference record itself came from.
+  sourceId           String?
+  source             DataSource? @relation(fields: [sourceId], references: [id])
+
+  priceBars        PriceBar[]
+  corporateActions CorporateAction[]
+  statements       FinancialStatement[]
+  snapshots        AnalysisSnapshot[]
+  positions        Position[]
+  transactions     PortfolioTransaction[]
+  watchlistItems   WatchlistItem[]
+  alerts           Alert[]
+  fetches          DataFetch[]
+  qualityIssues    DataQualityIssue[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ticker, exchangeId])
+  @@index([cik])
+  @@index([isin])
+  @@index([name])
+}
+
+// ─────────────────────────── Provenance & freshness ──────────────────────────
+
+enum DataSourceKind {
+  REFERENCE // security master / ticker lists
+  FUNDAMENTALS
+  PRICES
+  MACRO // bond yields, CPI
+  MANUAL // values typed in by the user
+}
+
+model DataSource {
+  id           String         @id @default(cuid())
+  key          String         @unique // stable identifier, e.g. "sec-edgar", "tiingo", "dev-fixture"
+  name         String
+  kind         DataSourceKind
+  baseUrl      String?
+  termsUrl     String?
+  description  String?
+  // True for explicitly labelled development fixtures. Never real data.
+  isDevFixture Boolean        @default(false)
+
+  fetches          DataFetch[]
+  securities       Security[]
+  priceBars        PriceBar[]
+  corporateActions CorporateAction[]
+  statements       FinancialStatement[]
+  qualityIssues    DataQualityIssue[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum FetchStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+// One ingestion run against one provider endpoint.
+model DataFetch {
+  id           String      @id @default(cuid())
+  sourceId     String
+  source       DataSource  @relation(fields: [sourceId], references: [id])
+  securityId   String?
+  security     Security?   @relation(fields: [securityId], references: [id], onDelete: SetNull)
+  dataset      String // e.g. "companyfacts", "daily-prices", "ticker-universe"
+  endpoint     String // request URL with secrets removed
+  status       FetchStatus @default(RUNNING)
+  httpStatus   Int?
+  recordCount  Int?
+  errorMessage String?
+  payloadHash  String? // sha256 of raw payload, for change detection/audit
+  startedAt    DateTime    @default(now())
+  completedAt  DateTime?
+
+  priceBars        PriceBar[]
+  corporateActions CorporateAction[]
+  statements       FinancialStatement[]
+
+  @@index([sourceId, startedAt])
+  @@index([securityId, dataset, startedAt])
+}
+
+enum IssueSeverity {
+  INFO
+  WARNING
+  ERROR
+}
+
+model DataQualityIssue {
+  id         String        @id @default(cuid())
+  securityId String?
+  security   Security?     @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  sourceId   String?
+  source     DataSource?   @relation(fields: [sourceId], references: [id])
+  severity   IssueSeverity
+  code       String // machine readable, e.g. BALANCE_SHEET_MISMATCH
+  message    String
+  context    Json?
+  detectedAt DateTime      @default(now())
+  resolvedAt DateTime?
+
+  @@index([securityId, resolvedAt])
+}
+
+// ──────────────────────────────── Market data ────────────────────────────────
+
+model PriceBar {
+  id         String     @id @default(cuid())
+  securityId String
+  security   Security   @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  date       DateTime   @db.Date // trading session date (exchange local)
+  open       Decimal?   @db.Decimal(20, 6)
+  high       Decimal?   @db.Decimal(20, 6)
+  low        Decimal?   @db.Decimal(20, 6)
+  close      Decimal    @db.Decimal(20, 6)
+  adjClose   Decimal?   @db.Decimal(20, 6) // split/dividend adjusted
+  volume     BigInt?
+  currency   String
+  sourceId   String
+  source     DataSource @relation(fields: [sourceId], references: [id])
+  fetchId    String?
+  fetch      DataFetch? @relation(fields: [fetchId], references: [id], onDelete: SetNull)
+  createdAt  DateTime   @default(now())
+
+  @@unique([securityId, date, sourceId])
+  @@index([securityId, date])
+}
+
+enum CorporateActionType {
+  CASH_DIVIDEND
+  STOCK_SPLIT
+}
+
+model CorporateAction {
+  id         String              @id @default(cuid())
+  securityId String
+  security   Security            @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  type       CorporateActionType
+  exDate     DateTime            @db.Date
+  payDate    DateTime?           @db.Date
+  amount     Decimal?            @db.Decimal(20, 6) // per share, for dividends
+  ratio      Decimal?            @db.Decimal(20, 8) // for splits (new/old)
+  currency   String?
+  sourceId   String
+  source     DataSource          @relation(fields: [sourceId], references: [id])
+  fetchId    String?
+  fetch      DataFetch?          @relation(fields: [fetchId], references: [id], onDelete: SetNull)
+  createdAt  DateTime            @default(now())
+
+  @@unique([securityId, type, exDate, sourceId])
+}
+
+// ───────────────────────────── Financial statements ──────────────────────────
+
+enum StatementType {
+  INCOME
+  BALANCE_SHEET
+  CASH_FLOW
+}
+
+enum PeriodType {
+  ANNUAL
+  QUARTERLY
+  TTM
+}
+
+model FinancialStatement {
+  id              String          @id @default(cuid())
+  securityId      String
+  security        Security        @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  statementType   StatementType
+  periodType      PeriodType
+  fiscalYear      Int
+  fiscalPeriod    String // FY, Q1, Q2, Q3, Q4
+  periodStart     DateTime?       @db.Date // null for balance sheet (instant)
+  periodEnd       DateTime        @db.Date
+  currency        String
+  form            String? // 10-K, 10-Q, 20-F ...
+  accessionNumber String? // SEC accession number of the filing the values came from
+  filedAt         DateTime?       @db.Date
+  isRestated      Boolean         @default(false) // values taken from a later filing than the original
+  sourceId        String
+  source          DataSource      @relation(fields: [sourceId], references: [id])
+  fetchId         String?
+  fetch           DataFetch?      @relation(fields: [fetchId], references: [id], onDelete: SetNull)
+  lineItems       FinancialLineItem[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([securityId, statementType, periodType, periodEnd, sourceId])
+  @@index([securityId, periodType, fiscalYear])
+}
+
+// A normalized line item. `concept` is our canonical key (see
+// src/lib/normalization/concepts.ts); `sourceConcept` preserves the original
+// taxonomy tag (e.g. us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax).
+model FinancialLineItem {
+  id            String             @id @default(cuid())
+  statementId   String
+  statement     FinancialStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  concept       String
+  sourceConcept String
+  value         Decimal            @db.Decimal(30, 6)
+  unit          String // USD, shares, USD/shares
+  accessionNumber String?
+  filedAt       DateTime?          @db.Date
+
+  @@unique([statementId, concept])
+}
+
+// ─────────────────────────────── Analysis ────────────────────────────────────
+
+enum Methodology {
+  GRAHAM_1973 // strictly The Intelligent Investor, 4th ed.
+  MODERN_EXTENSION // clearly separated modern additions
+}
+
+// Immutable record of an engine run, including the exact inputs used, so a
+// result can always be explained and reproduced later.
+model AnalysisSnapshot {
+  id            String      @id @default(cuid())
+  securityId    String
+  security      Security    @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  engine        String // e.g. "graham-defensive", "graham-enterprising", "valuation"
+  engineVersion String
+  methodology   Methodology
+  asOfDate      DateTime    @db.Date // date of the price used
+  priceUsed     Decimal?    @db.Decimal(20, 6)
+  inputs        Json
+  results       Json
+  dataQuality   Json?
+  inputsHash    String
+  usesDevFixtureData Boolean @default(false)
+  computedAt    DateTime    @default(now())
+
+  @@index([securityId, engine, computedAt])
+}
+
+// ─────────────────────────────── Portfolio ───────────────────────────────────
+
+model Portfolio {
+  id           String                 @id @default(cuid())
+  name         String
+  description  String?
+  baseCurrency String                 @default("USD")
+  positions    Position[]
+  transactions PortfolioTransaction[]
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+}
+
+model Position {
+  id          String    @id @default(cuid())
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  securityId  String
+  security    Security  @relation(fields: [securityId], references: [id])
+  quantity    Decimal   @db.Decimal(24, 8)
+  averageCost Decimal   @db.Decimal(20, 6) // per share, in `currency`
+  currency    String
+  openedAt    DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([portfolioId, securityId])
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  DIVIDEND
+  SPLIT
+  FEE
+}
+
+model PortfolioTransaction {
+  id          String          @id @default(cuid())
+  portfolioId String
+  portfolio   Portfolio       @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  securityId  String?
+  security    Security?       @relation(fields: [securityId], references: [id])
+  type        TransactionType
+  tradeDate   DateTime        @db.Date
+  quantity    Decimal?        @db.Decimal(24, 8)
+  price       Decimal?        @db.Decimal(20, 6)
+  fees        Decimal?        @db.Decimal(20, 6)
+  currency    String
+  notes       String?
+  createdAt   DateTime        @default(now())
+
+  @@index([portfolioId, tradeDate])
+}
+
+// ─────────────────────────────── Watchlists ──────────────────────────────────
+
+model Watchlist {
+  id        String          @id @default(cuid())
+  name      String
+  isDefault Boolean         @default(false)
+  items     WatchlistItem[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model WatchlistItem {
+  id          String    @id @default(cuid())
+  watchlistId String
+  watchlist   Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  securityId  String
+  security    Security  @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  notes       String?
+  addedAt     DateTime  @default(now())
+
+  @@unique([watchlistId, securityId])
+}
+
+// ──────────────────────────────── Alerts ─────────────────────────────────────
+
+enum AlertType {
+  PRICE_ABOVE
+  PRICE_BELOW
+  MARGIN_OF_SAFETY_ABOVE
+  GRAHAM_CRITERIA_CHANGED
+  DATA_STALE
+}
+
+enum AlertStatus {
+  ACTIVE
+  TRIGGERED
+  DISABLED
+}
+
+model Alert {
+  id              String      @id @default(cuid())
+  securityId      String?
+  security        Security?   @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  type            AlertType
+  threshold       Decimal?    @db.Decimal(20, 6)
+  params          Json?
+  status          AlertStatus @default(ACTIVE)
+  lastEvaluatedAt DateTime?
+  lastTriggeredAt DateTime?
+  note            String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([status])
+}
+
+// ─────────────────────────────── Settings ────────────────────────────────────
+
+// Key/value application settings, validated in code by zod schemas
+// (src/lib/settings/schema.ts). Secrets (API keys) never live here; they stay
+// in server-side environment variables.
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
