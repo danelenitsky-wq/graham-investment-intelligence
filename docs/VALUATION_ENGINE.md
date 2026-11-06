@@ -44,7 +44,7 @@ terminal growth, earnings normalization years, share dilution, projection years.
   terminal growth net of dilution).
 - **Normalized earnings**: avg EPS over the window × (1 + g′) / (r − g′).
 
-Conservative defaults: historical revenue CAGR capped at 8%; the normalized net-income margin
+Defaults: revenue growth = the company's own revenue CAGR over the normalization window (last 5 years by default), capped at 30%; the normalized net-income margin
 (the FCF margin only when net income is missing; an FCF margin below half the net margin, as in
 heavy-capex years, is flagged on the bottom-line card rather than used, because it would value a
 profitable business at almost nothing); dilution = historical share growth floored at 0 (buybacks not extrapolated); r = 10%,

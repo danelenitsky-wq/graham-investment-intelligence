@@ -57,7 +57,7 @@ export const fairValueEn = {
     assetBasedOnly: "Based on assets only: no earnings-based model fits this company.",
     gated: "The data is not sufficient for a reliable analysis. The estimate is for reference only.",
   },
-  assumptions: "Conservative assumptions from the company's own history: required return {r}, revenue growth {g} a year (capped at 8%). You can change them in the valuation tab.",
+  assumptions: "Assumptions from the company's own history: required return {r}, revenue growth {g} a year for {years} years (its average over the last {window} years, capped at 30%), then {terminal} a year. You can change them in the valuation tab.",
   noModel: "No valuation model fits this company with the available data, so no fair value is shown.",
   noPrice: "No comparable market price, so the gap is not shown.",
   details: "Full valuation details",
