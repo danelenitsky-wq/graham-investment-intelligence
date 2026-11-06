@@ -114,7 +114,7 @@ export const valuationHe: ValuationDictionary = {
       USER: "ההגדרה שלכם",
       UNAVAILABLE: "אין היסטוריה",
     },
-    marginBasis: { NET_INCOME: "הנמוך מבין שיעור הרווח הנקי ושיעור התזרים החופשי: רווח נקי", FREE_CASH_FLOW: "הנמוך מבין שיעור הרווח הנקי ושיעור התזרים החופשי: תזרים חופשי" },
+    marginBasis: { NET_INCOME: "שיעור הרווח הנקי המנורמל", FREE_CASH_FLOW: "שיעור התזרים החופשי (אין נתוני רווח נקי)" },
     historical: "היסטוריה ({years})",
     revenueCagr: "צמיחה שנתית ממוצעת בהכנסות",
     netMargin: "שיעור רווח נקי",

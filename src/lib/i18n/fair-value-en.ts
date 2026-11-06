@@ -51,6 +51,7 @@ export const fairValueEn = {
     },
   },
   flags: {
+    cashFlowBelowEarnings: "Free cash flow has been far below net income (heavy investment, e.g. new data centres). The estimate uses normalized net income; if that investment does not pay off, the value is lower.",
     modelsDisagree: "The models disagree by more than 2×. Treat the estimate with extra caution.",
     terminalHeavy: "Most of the DCF value comes from the years after the forecast. Treat with caution.",
     assetBasedOnly: "Based on assets only: no earnings-based model fits this company.",

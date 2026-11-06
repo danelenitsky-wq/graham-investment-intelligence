@@ -91,7 +91,7 @@ export interface FairValueSummary {
     historical: Num;
     years: number | null;
   };
-  flags: { modelsDisagree: boolean; terminalHeavy: boolean; assetBasedOnly: boolean };
+  flags: { modelsDisagree: boolean; terminalHeavy: boolean; assetBasedOnly: boolean; cashFlowBelowEarnings: boolean };
 }
 
 export interface FairValueInput {
@@ -104,6 +104,8 @@ export interface FairValueInput {
   price: Num;
   currency: string | null;
   historicalRevenueGrowth: Num;
+  /** Normalized FCF margin far below the net-income margin (from the DCF defaults). */
+  fcfWellBelowEarnings?: boolean;
 }
 
 const positive = (v: Num | undefined): v is number => v !== null && v !== undefined && Number.isFinite(v) && v > 0;
@@ -200,7 +202,7 @@ export function buildFairValue(input: FairValueInput): FairValueSummary {
       models,
       scenarios: { values: [], above: 0, total: 0 },
       impliedGrowth: noImplied,
-      flags: { modelsDisagree: false, terminalHeavy: false, assetBasedOnly: false },
+      flags: { modelsDisagree: false, terminalHeavy: false, assetBasedOnly: false, cashFlowBelowEarnings: false },
     };
   }
 
@@ -241,6 +243,7 @@ export function buildFairValue(input: FairValueInput): FairValueSummary {
       modelsDisagree: bases.length > 1 && Math.max(...bases) / Math.min(...bases) > DISAGREEMENT_FACTOR,
       terminalHeavy: used.some((m) => m.id === "dcf") && iv.terminalHeavy,
       assetBasedOnly: used.length === 1 && used[0].id === "ncav",
+      cashFlowBelowEarnings: used.some((m) => m.id === "dcf") && input.fcfWellBelowEarnings === true,
     },
   };
 }

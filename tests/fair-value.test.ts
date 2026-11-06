@@ -140,6 +140,30 @@ describe("bottom-line fair value", () => {
   });
 });
 
+describe("heavy-investment company (AMZN-like)", () => {
+  // Synthetic: profitable, but capex absorbs most of the operating cash flow in recent years.
+  const annual = [2021, 2022, 2023, 2024, 2025].map((fy, i) => {
+    const revenue = [470, 514, 575, 638, 717][i] * 1e9;
+    const netIncome = [33.4, -2.7, 30.4, 59.2, 78][i] * 1e9;
+    const capex = [61, 64, 53, 83, 132][i] * 1e9;
+    const ocf = [46, 47, 85, 116, 140][i] * 1e9;
+    const shares = 10.7e9;
+    return year(fy, { revenue, netIncome, epsDiluted: netIncome / shares, dilutedShares: shares, sharesOutstanding: shares, operatingCashFlow: ocf, capitalExpenditures: capex, currentAssets: 190e9, currentLiabilities: 180e9, totalLiabilities: 330e9, totalAssets: 620e9, stockholdersEquity: 290e9 });
+  });
+
+  it("values the business on normalized net income, not on depressed free cash flow, and flags the gap", () => {
+    const base = buildIntrinsicBase(annual, "INDUSTRIAL");
+    const d = defaultAssumptions(base);
+    expect(d.marginBasis).toBe("NET_INCOME");
+    expect(d.historical.fcfMargin!).toBeLessThan(d.historical.netMargin! / 2);
+    expect(d.fcfWellBelowEarnings).toBe(true);
+    const fv = buildFairValue({ ...inputFor(annual, 261.82), fcfWellBelowEarnings: d.fcfWellBelowEarnings });
+    expect(fv.flags.cashFlowBelowEarnings).toBe(true);
+    // ~6.8% normalized margin on $717B revenue: several times the FCF-based ~$15.
+    expect(fv.base!).toBeGreaterThan(60);
+  });
+});
+
 describe("implied revenue growth", () => {
   it("reports when the price is beyond the search range", () => {
     const base = buildIntrinsicBase(fastGrower(), "INDUSTRIAL");

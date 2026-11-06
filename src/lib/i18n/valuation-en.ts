@@ -112,7 +112,7 @@ export const valuationEn = {
       USER: "your setting",
       UNAVAILABLE: "no history",
     },
-    marginBasis: { NET_INCOME: "lower of net-income and FCF margins: net income", FREE_CASH_FLOW: "lower of net-income and FCF margins: free cash flow" },
+    marginBasis: { NET_INCOME: "normalized net-income margin", FREE_CASH_FLOW: "free-cash-flow margin (no net income data)" },
     historical: "History ({years})",
     revenueCagr: "Revenue CAGR",
     netMargin: "Net margin",
