@@ -59,6 +59,7 @@ describe("research report", () => {
     expect(line).toBeDefined();
     expect(line).toContain(`$${iv.toFixed(2)}`);
     expect(line).toContain(`$${(iv * 1.5).toFixed(2)}`);
+    for (const locale of ["en", "he"] as const) expect(allText(reportFor({ price: 200 }, locale).report)).not.toMatch(/×⁩?\s*×|פי ⁦/);
     expect(line).toMatch(/intrinsic value estimate of ⁦\$/);
   });
 
