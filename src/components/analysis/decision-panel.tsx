@@ -434,7 +434,7 @@ function SnapshotsCard({
   );
 }
 
-function ComparisonView({ c, dict, locale, currency }: { c: SnapshotComparison; dict: Dictionary; locale: Locale; currency: string | null }) {
+export function ComparisonView({ c, dict, locale, currency }: { c: SnapshotComparison; dict: Dictionary; locale: Locale; currency: string | null }) {
   const s = dict.decision.snapshots;
   const d = dict.decision;
   const m = (v: number | null, key: string) =>
@@ -490,6 +490,46 @@ function ComparisonView({ c, dict, locale, currency }: { c: SnapshotComparison; 
         </div>
         );
       })}
+      <StatementChanges c={c} dict={dict} locale={locale} />
+    </div>
+  );
+}
+
+function StatementChanges({ c, dict, locale }: { c: SnapshotComparison; dict: Dictionary; locale: Locale }) {
+  const h = dict.holdings.history;
+  const s = dict.decision.snapshots;
+  const label = (k: string) => (dict.concepts as Record<string, string>)[k] ?? k;
+  const changes = c.statementChanges ?? [];
+  return (
+    <div className="flex flex-col gap-1" data-testid="statement-changes">
+      <h4 className="text-xs font-semibold">{h.statementChanges}</h4>
+      {changes.length === 0 ? (
+        <span className="text-xs text-muted-foreground">{s.noChange}</span>
+      ) : (
+        changes.map((y) => (
+          <div key={y.fiscalYear} className="flex flex-col gap-1">
+            <span className="text-xs font-medium">{fmt(y.kind === "NEW" ? h.statementNew : y.kind === "REMOVED" ? h.statementRemoved : h.statementRevised, { fy: y.fiscalYear })}</span>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{h.columns.item}</TableHead>
+                  <TableHead>{h.columns.before}</TableHead>
+                  <TableHead>{h.columns.after}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {y.concepts.map((x) => (
+                  <TableRow key={x.concept}>
+                    <TableCell className="text-xs">{label(x.concept)}</TableCell>
+                    <TableCell className="text-xs"><Num>{x.from === null ? MISSING : formatNumber(locale, x.from, 2)}</Num></TableCell>
+                    <TableCell className="text-xs"><Num>{x.to === null ? MISSING : formatNumber(locale, x.to, 2)}</Num></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ))
+      )}
     </div>
   );
 }

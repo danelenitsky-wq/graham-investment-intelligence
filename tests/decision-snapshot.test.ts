@@ -108,3 +108,28 @@ describe("comparison view", () => {
     expect(c.metricChanges).toEqual([]);
   });
 });
+
+describe("statement input changes", () => {
+  it("lists new, revised and removed fiscal years concept by concept", async () => {
+    const { compareStatements } = await import("@/lib/decision");
+    const a = [
+      { fiscalYear: 2023, periodEnd: "2023-12-31", currency: "USD", values: { revenue: 100, netIncome: 10 } },
+      { fiscalYear: 2024, periodEnd: "2024-12-31", currency: "USD", values: { revenue: 110, netIncome: 12 } },
+    ];
+    const b = [
+      { fiscalYear: 2024, periodEnd: "2024-12-31", currency: "USD", values: { revenue: 110, netIncome: 11.5 } },
+      { fiscalYear: 2025, periodEnd: "2025-12-31", currency: "USD", values: { revenue: 120 } },
+    ];
+    expect(compareStatements(a, b)).toEqual([
+      { fiscalYear: 2025, kind: "NEW", concepts: [{ concept: "revenue", from: null, to: 120 }] },
+      { fiscalYear: 2024, kind: "REVISED", concepts: [{ concept: "netIncome", from: 12, to: 11.5 }] },
+      { fiscalYear: 2023, kind: "REMOVED", concepts: [{ concept: "netIncome", from: 10, to: null }, { concept: "revenue", from: 100, to: null }] },
+    ]);
+    expect(compareStatements(a, a)).toEqual([]);
+  });
+
+  it("are part of the snapshot comparison", () => {
+    const x = snap({ price: 60 });
+    expect(compareSnapshots(x, x).statementChanges).toEqual([]);
+  });
+});

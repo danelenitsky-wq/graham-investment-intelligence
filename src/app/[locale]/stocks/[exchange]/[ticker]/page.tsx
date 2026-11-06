@@ -5,6 +5,7 @@ import { DataPanel } from "@/components/analysis/data-panel";
 import { DecisionPanel } from "@/components/analysis/decision-panel";
 import { FinancialHistory } from "@/components/analysis/financial-history";
 import { GrahamPanels } from "@/components/analysis/graham-panels";
+import { InterimDeteriorationBanner, InterimPanel } from "@/components/analysis/interim-panel";
 import { SecurityHeader } from "@/components/analysis/security-header";
 import { SummaryPanel } from "@/components/analysis/summary-panel";
 import { ValuationPanel } from "@/components/analysis/valuation-panel";
@@ -76,6 +77,7 @@ async function Analysis({ params, searchParams }: Props) {
             content: (
               <div className="flex flex-col gap-5">
                 {gate}
+                <InterimDeteriorationBanner interim={a.interim} dict={dict} />
                 <SummaryPanel a={a} dict={dict} locale={locale} gated={gated} />
               </div>
             ),
@@ -118,6 +120,7 @@ async function Analysis({ params, searchParams }: Props) {
             ),
           },
           { value: "financials", label: dict.stock.tabs.financials, content: <FinancialHistory a={a} dict={dict} locale={locale} /> },
+          { value: "latest", label: dict.stock.tabs.latest, content: <InterimPanel interim={a.interim} dict={dict} locale={locale} /> },
           { value: "data", label: dict.stock.tabs.data, content: <DataPanel a={a} dict={dict} locale={locale} /> },
         ]}
       />

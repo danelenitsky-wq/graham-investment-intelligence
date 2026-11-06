@@ -10,12 +10,16 @@ export { buildResearchReport, reportToMarkdown, REPORT_TEMPLATE_VERSION, REPORT_
 export {
   buildDecisionSnapshot,
   compareSnapshots,
+  compareStatements,
   stableHash,
+  canonicalJson,
+  HASH_ALGORITHM,
   SNAPSHOT_SCHEMA_VERSION,
   type DecisionSnapshot,
   type SnapshotComparison,
   type SnapshotSource,
   type SnapshotTrigger,
   type ChangeDriver,
+  type StatementChange,
 } from "./snapshot";
 export { renderStatement, renderFactorReason, evidenceLabel, formatParam } from "./render";

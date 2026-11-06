@@ -1,8 +1,8 @@
 import "server-only";
 import { fundamentalsStatus, type DataStatus, type FundamentalsReason } from "@/lib/freshness/status";
-import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
-import { evaluateDecision, type DecisionResult, type DecisionSettings, type PositionContext, type Strategy } from "@/lib/decision";
+import { computeInterimHealth, type InterimHealth } from "@/lib/interim";
+import { evaluateDecision, stableHash, type DecisionResult, type DecisionSettings, type PositionContext, type Strategy } from "@/lib/decision";
 import {
   fundamentalsFreshness,
   priceFreshness,
@@ -127,6 +127,8 @@ export interface SecurityAnalysis {
   quote: QuoteView;
   health: DataHealth;
   quarterly: QuarterRow[];
+  /** Latest-quarter and TTM health since the latest annual report. Separate from (and never feeding) the Graham rules. */
+  interim: InterimHealth;
   priceHistory: { date: string; close: number }[];
   /** Provider of the stored daily price history. */
   priceHistorySource: string | null;
@@ -172,7 +174,7 @@ export async function findSecurity(exchangeCode: string, ticker: string) {
 /** Load stored data for a security and run every engine. Read-only. */
 export async function getSecurityAnalysis(
   securityId: string,
-  options: { growthPercentOverride?: number | null; quote?: QuoteView; strategy?: Strategy | null } = {},
+  options: { growthPercentOverride?: number | null; quote?: QuoteView; strategy?: Strategy | null; position?: PositionContext | null } = {},
 ): Promise<SecurityAnalysis | null> {
   const security = await db.security.findUnique({ where: { id: securityId }, include: { exchange: true, source: true } });
   if (!security) return null;
@@ -403,7 +405,7 @@ export async function getSecurityAnalysis(
     providers: providerHealth(sourceFetches),
   };
 
-  const position = await loadPosition(securityId);
+  const position = options.position !== undefined ? options.position : await loadPosition(securityId);
   const decisionSettings: DecisionSettings = settings.decision;
   const decision = evaluateDecision({
     strategy: options.strategy ?? decisionSettings.strategy,
@@ -465,6 +467,7 @@ export async function getSecurityAnalysis(
     quote,
     health,
     quarterly: quarterly.slice(0, 12),
+    interim: computeInterimHealth(annual, quarterly),
     priceHistory,
     priceHistorySource: priceSourceName ?? null,
     dividends: dividendRows
@@ -500,8 +503,9 @@ export async function getSecurityAnalysis(
 async function loadPosition(securityId: string): Promise<PositionContext | null> {
   const row = await db.position.findFirst({ where: { securityId }, orderBy: { createdAt: "asc" } });
   if (!row) return null;
-  const { summary } = await getPortfolioSummary();
-  const valued = summary.positions.find((p) => p.id === row.id);
+  const { holdings } = await getPortfolioSummary();
+  // Portfolio-wide weight: null when another currency cannot be converted with a sourced FX rate.
+  const valued = holdings.holdings.find((p) => p.id === row.id);
   const thesis = row.thesisStrategy;
   return {
     quantity: Number(row.quantity),
@@ -554,9 +558,8 @@ function providerHealth(fetches: { status: string; startedAt: Date; completedAt:
     });
 }
 
-function hash(v: unknown) {
-  return createHash("sha256").update(JSON.stringify(v)).digest("hex");
-}
+// Same canonical SHA-256 as decision snapshots: independent of key order.
+const hash = stableHash;
 
 /** Persist immutable snapshots of the current engine outputs, with their inputs. */
 export async function saveAnalysisSnapshots(securityId: string) {

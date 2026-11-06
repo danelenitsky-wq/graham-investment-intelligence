@@ -1,5 +1,7 @@
 import {
   Activity,
+  Bell,
+  GitCompare,
   BarChart3,
   Briefcase,
   Calculator,
@@ -11,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type NavKey = "overview" | "stocks" | "screening" | "valuation" | "financials" | "portfolio" | "watchlist" | "dataHealth" | "settings";
+export type NavKey = "overview" | "stocks" | "screening" | "valuation" | "financials" | "portfolio" | "watchlist" | "alerts" | "history" | "dataHealth" | "settings";
 
 export interface NavItem {
   key: NavKey;
@@ -28,6 +30,8 @@ export const NAV_ITEMS: NavItem[] = [
   { key: "financials", path: "/financials", icon: History, section: "research" },
   { key: "portfolio", path: "/portfolio", icon: Briefcase, section: "holdings" },
   { key: "watchlist", path: "/watchlist", icon: Eye, section: "holdings" },
+  { key: "alerts", path: "/alerts", icon: Bell, section: "holdings" },
+  { key: "history", path: "/history", icon: GitCompare, section: "holdings" },
   { key: "dataHealth", path: "/data-health", icon: Activity, section: "system" },
   { key: "settings", path: "/settings", icon: Settings, section: "system" },
 ];

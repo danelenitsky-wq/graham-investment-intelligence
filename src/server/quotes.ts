@@ -1,12 +1,13 @@
 import "server-only";
 import type { QuoteSnapshot } from "@/generated/prisma/client";
 import { calendarForExchange, sessionCloseTime, sessionInfo, zonedTimeToUtc, type SessionInfo } from "@/lib/market/calendar";
-import { classifyQuote, decideQuoteFetch, type FetchDecisionReason, type QuoteFeed, type QuoteReason, type QuoteStatus } from "@/lib/freshness/quote";
+import { classifyManualQuote, classifyQuote, decideQuoteFetch, type FetchDecisionReason, type QuoteFeed, type QuoteReason, type QuoteStatus } from "@/lib/freshness/quote";
 import { quoteProvidersFor } from "@/lib/providers/registry";
 import { ProviderError, type MarketCode, type QuoteProvider } from "@/lib/providers/types";
 import { quoteCloses, verifyQuote, type VerificationStatus } from "@/lib/verification";
 import { db } from "./db";
 import { ensureSource, failFetch, finishFetch, startFetch } from "./ingestion";
+import { getSettings } from "./settings";
 
 export interface QuoteAttempt {
   provider: string;
@@ -54,6 +55,8 @@ export interface QuoteView {
   session: SessionInfo;
   /** Poll interval the client should use, or null when auto refresh is not supported / not useful now. */
   autoRefreshSeconds: number | null;
+  /** Set when the price shown is a manual price update (value as entered, unit, source label). */
+  manual: { enteredPrice: number | null; enteredUnit: string | null; sourceLabel: string | null } | null;
 }
 
 const VERIFY_EVERY_MS = 15 * 60_000;
@@ -128,13 +131,16 @@ async function loadQuoteView(securityId: string, { force = false, now = new Date
     : latest
       ? { price: Number(latest.price), sourceTimestamp: latest.sourceTimestamp.toISOString(), retrievedAt: latest.retrievedAt.toISOString(), feed: latest.feed, delayMinutes: latest.delayMinutes }
       : null;
-  const cls = classifyQuote({
-    quote: observation,
-    session,
-    now,
-    lastFetchFailed: Boolean(lastFetchFailed) && !useEod,
-    conflicted: !useEod && latest?.verificationStatus === "CONFLICT",
-  });
+  const manual = !useEod && latest?.isManual === true ? latest : null;
+  const cls = manual
+    ? classifyManualQuote({ sourceTimestamp: manual.sourceTimestamp.toISOString(), now, staleAfterDays: (await getSettings()).freshness.priceStaleDays })
+    : classifyQuote({
+        quote: observation,
+        session,
+        now,
+        lastFetchFailed: Boolean(lastFetchFailed) && !useEod,
+        conflicted: !useEod && latest?.verificationStatus === "CONFLICT",
+      });
 
   const [lastOk, lastFail, derived] = await Promise.all([
     db.dataFetch.findFirst({ where: { securityId, dataset: "quote", status: "SUCCESS" }, orderBy: { startedAt: "desc" } }),
@@ -188,6 +194,7 @@ async function loadQuoteView(securityId: string, { force = false, now = new Date
     configuredProviders: providers.map((p) => p.descriptor.key),
     session,
     autoRefreshSeconds: autoRefresh,
+    manual: manual ? { enteredPrice: n(manual.enteredPrice), enteredUnit: manual.enteredUnit, sourceLabel: manual.sourceLabel } : null,
   };
 }
 

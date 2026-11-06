@@ -4,7 +4,8 @@ import { DEV_FIXTURE } from "./dev-fixture";
 import { FINNHUB, finnhubQuotes } from "./finnhub";
 import { FMP, fmpStatements } from "./fmp";
 import { SEC_EDGAR, secEdgarFilings, secEdgarFundamentals, secEdgarReference } from "./sec-edgar";
-import { TASE, taseFundamentals, tasePrices } from "./tase";
+import { TASE, TASE_DATAHUB, taseFundamentals, tasePrices } from "./tase";
+import { BOI } from "./boi";
 import { TIINGO, tiingoPrices, tiingoQuotes } from "./tiingo";
 import { TWELVE_DATA, twelveDataQuotes } from "./twelve-data";
 import type {
@@ -23,7 +24,7 @@ import type {
  * Free-first: every provider here works on a free plan. FMP is optional and is
  * only used, on its free Basic plan, to cross-check SEC statements.
  */
-export const ALL_PROVIDERS: ProviderDescriptor[] = [SEC_EDGAR, TIINGO, FINNHUB, TWELVE_DATA, FMP, TASE, DEV_FIXTURE];
+export const ALL_PROVIDERS: ProviderDescriptor[] = [SEC_EDGAR, TIINGO, FINNHUB, TWELVE_DATA, FMP, BOI, TASE_DATAHUB, TASE, DEV_FIXTURE];
 
 function isSet(name: string): boolean {
   const e = env();
@@ -40,8 +41,10 @@ function isSet(name: string): boolean {
       return Boolean(e.TWELVE_DATA_API_KEY);
     case "ENABLE_DEV_FIXTURES":
       return e.ENABLE_DEV_FIXTURES;
-    case "TASE_API_KEY":
-      return false; // provider not implemented yet
+    case "TASE_DATAHUB_API_KEY":
+      return Boolean(e.TASE_DATAHUB_API_KEY);
+    case "TASE_PRICES_LICENSED":
+      return false; // no free TASE price feed exists; manual price updates instead
     default:
       return Boolean(process.env[name]);
   }
@@ -102,4 +105,26 @@ export function verificationStatementsProviderFor(market: MarketCode): Verificat
 
 export function filingsProviderFor(market: MarketCode): FilingsProvider | null {
   return market === "US" && isConfigured(SEC_EDGAR) ? secEdgarFilings : null;
+}
+
+export interface MarketCoverage {
+  market: MarketCode;
+  /** Automatic latest quotes from a configured provider. */
+  automaticQuotes: boolean;
+  /** Daily history (52-week range, dividends). */
+  dailyHistory: boolean;
+  fundamentals: boolean;
+  /** Symbol validation against an exchange master. */
+  symbolMaster: "SEC" | "TASE_DATAHUB" | null;
+  /** Prices must be entered manually, with a timestamp and a source label. */
+  manualPricesRequired: boolean;
+}
+
+/** What the free providers can do for each market, given the current configuration. */
+export function marketCoverage(market: MarketCode): MarketCoverage {
+  if (market === "IL") {
+    return { market, automaticQuotes: false, dailyHistory: false, fundamentals: false, symbolMaster: isConfigured(TASE_DATAHUB) ? "TASE_DATAHUB" : null, manualPricesRequired: true };
+  }
+  const quotes = quoteProvidersFor("US").length > 0;
+  return { market, automaticQuotes: quotes, dailyHistory: isConfigured(TIINGO), fundamentals: isConfigured(SEC_EDGAR), symbolMaster: "SEC", manualPricesRequired: !quotes && !isConfigured(TIINGO) };
 }

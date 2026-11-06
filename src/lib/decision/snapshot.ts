@@ -7,6 +7,7 @@
  * snapshots shows how the assessment changed when a new price or new
  * financial statements arrived, and which input changed.
  */
+import { createHash } from "node:crypto";
 import type { GrahamAnalysis } from "@/lib/graham";
 import { findRule, ruleValue } from "@/lib/graham/rules";
 import type { RuleStatus, SourceRef } from "@/lib/graham/types";
@@ -75,28 +76,74 @@ export interface DecisionSnapshot {
   inputsHash: string;
 }
 
-/** Deterministic, dependency-free 64-bit FNV-1a hash (hex) of a JSON value. */
+/** Identifies the hashing scheme, stored implicitly by the "sha256:" prefix of every hash. */
+export const HASH_ALGORITHM = "sha256";
+
+/**
+ * Deterministic SHA-256 (hex, prefixed "sha256:") of a value's canonical
+ * serialization (see canonicalJson). Equal inputs always give the same hash;
+ * a change anywhere in the input, at any depth, gives a different one.
+ *
+ * Uses Node's crypto module, so it runs on the server and in scripts only.
+ */
 export function stableHash(value: unknown): string {
-  const json = stableStringify(value);
-  let h1 = 0x811c9dc5;
-  let h2 = 0xcbf29ce4;
-  for (let i = 0; i < json.length; i++) {
-    const c = json.charCodeAt(i);
-    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
-    h2 = Math.imul(h2 ^ c, 0x01000193 ^ 0x5bd1e995) >>> 0;
-  }
-  return h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0");
+  return `${HASH_ALGORITHM}:${createHash(HASH_ALGORITHM).update(canonicalJson(value), "utf8").digest("hex")}`;
 }
 
-export function stableStringify(v: unknown): string {
-  if (v === null || typeof v !== "object") return JSON.stringify(v ?? null);
-  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
-  const o = v as Record<string, unknown>;
-  return `{${Object.keys(o)
-    .filter((k) => o[k] !== undefined)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`)
-    .join(",")}}`;
+/**
+ * Canonical JSON: object keys sorted by code point, no whitespace, keys whose
+ * value is undefined left out (as JSON.stringify does). Values JSON cannot
+ * represent faithfully are encoded explicitly instead of collapsing to null or
+ * {}, so they cannot collide with real data:
+ *   NaN / ±Infinity → {"$num":"NaN"|"Infinity"|"-Infinity"}
+ *   Date            → {"$date":"<ISO 8601>"}
+ *   bigint          → {"$bigint":"<decimal>"}
+ * Objects with toJSON() (other than Date) are serialized through it.
+ * Functions, symbols, Maps, Sets and circular references throw: silently
+ * dropping them would make different inputs hash the same.
+ */
+export function canonicalJson(value: unknown): string {
+  return canon(value, new Set());
+}
+
+/** @deprecated Kept as an alias; use canonicalJson. */
+export const stableStringify = canonicalJson;
+
+function canon(v: unknown, seen: Set<object>): string {
+  if (v === null || v === undefined) return "null";
+  switch (typeof v) {
+    case "string":
+    case "boolean":
+      return JSON.stringify(v);
+    case "number":
+      return Number.isFinite(v) ? JSON.stringify(v) : `{"$num":${JSON.stringify(String(v))}}`;
+    case "bigint":
+      return `{"$bigint":${JSON.stringify(v.toString())}}`;
+    case "function":
+    case "symbol":
+      throw new TypeError(`canonicalJson: cannot hash a ${typeof v}`);
+  }
+  const o = v as object;
+  if (o instanceof Date) {
+    if (Number.isNaN(o.getTime())) throw new TypeError("canonicalJson: invalid Date");
+    return `{"$date":${JSON.stringify(o.toISOString())}}`;
+  }
+  if (o instanceof Map || o instanceof Set) throw new TypeError("canonicalJson: Map/Set are not supported; convert to arrays or objects first");
+  if (seen.has(o)) throw new TypeError("canonicalJson: circular reference");
+  seen.add(o);
+  try {
+    if (Array.isArray(o)) return `[${o.map((x) => canon(x, seen)).join(",")}]`;
+    const withToJson = o as { toJSON?: () => unknown };
+    if (typeof withToJson.toJSON === "function") return canon(withToJson.toJSON(), seen);
+    const rec = o as Record<string, unknown>;
+    return `{${Object.keys(rec)
+      .filter((k) => rec[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canon(rec[k], seen)}`)
+      .join(",")}}`;
+  } finally {
+    seen.delete(o);
+  }
 }
 
 export interface SnapshotParams {
@@ -183,8 +230,37 @@ export interface SnapshotComparison {
   factorChanges: { id: FactorId; from: FactorStatus; to: FactorStatus }[];
   ruleChanges: { id: string; from: RuleStatus | null; to: RuleStatus | null }[];
   metricChanges: { key: keyof SnapshotMetrics; from: number | null; to: number | null }[];
+  /** Per fiscal year: statement inputs that were added, revised or dropped between the snapshots. */
+  statementChanges: StatementChange[];
   addedTriggers: string[];
   removedTriggers: string[];
+}
+
+export interface StatementChange {
+  fiscalYear: number;
+  kind: "NEW" | "REVISED" | "REMOVED";
+  concepts: { concept: string; from: number | null; to: number | null }[];
+}
+
+/** Compare the annual statement inputs of two snapshots, year by year and concept by concept. */
+export function compareStatements(a: AnnualFinancials[], b: AnnualFinancials[]): StatementChange[] {
+  const ya = new Map(a.map((y) => [y.fiscalYear, y]));
+  const yb = new Map(b.map((y) => [y.fiscalYear, y]));
+  const years = [...new Set([...ya.keys(), ...yb.keys()])].sort((x, y) => y - x);
+  const out: StatementChange[] = [];
+  for (const fy of years) {
+    const x = ya.get(fy);
+    const y = yb.get(fy);
+    const vx = (x?.values ?? {}) as Record<string, number | undefined>;
+    const vy = (y?.values ?? {}) as Record<string, number | undefined>;
+    const keys = [...new Set([...Object.keys(vx), ...Object.keys(vy)])].sort();
+    const concepts = keys
+      .filter((k) => !near(vx[k] ?? null, vy[k] ?? null))
+      .map((k) => ({ concept: k, from: vx[k] ?? null, to: vy[k] ?? null }));
+    if (concepts.length === 0) continue;
+    out.push({ fiscalYear: fy, kind: !x ? "NEW" : !y ? "REMOVED" : "REVISED", concepts });
+  }
+  return out;
 }
 
 const near = (a: number | null, b: number | null) => (a === null || b === null ? a === b : Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b)));
@@ -234,6 +310,7 @@ export function compareSnapshots(a: DecisionSnapshot, b: DecisionSnapshot): Snap
     factorChanges,
     ruleChanges,
     metricChanges,
+    statementChanges: compareStatements(a.inputs.annual ?? [], b.inputs.annual ?? []),
     addedTriggers: [...tb].filter((x) => !ta.has(x)),
     removedTriggers: [...ta].filter((x) => !tb.has(x)),
   };

@@ -1,5 +1,7 @@
 import { decisionHe } from "./decision-he";
+import { holdingsHe } from "./holdings-he";
 import { valuationHe } from "./valuation-he";
+import { interimHe } from "./interim-he";
 import { grahamHe } from "./graham-he";
 import type { Dictionary } from "./en";
 
@@ -19,6 +21,8 @@ export const he: Dictionary = {
     financials: "היסטוריה פיננסית",
     portfolio: "תיק השקעות",
     watchlist: "רשימת מעקב",
+    alerts: "התראות",
+    history: "היסטוריית ניתוחים",
     dataHealth: "תקינות נתונים",
     settings: "הגדרות",
     sections: { research: "מחקר", holdings: "אחזקות", system: "מערכת" },
@@ -118,7 +122,7 @@ export const he: Dictionary = {
   stock: {
     searchTitle: "ניתוח מניה",
     searchSubtitle: "חיפוש נייר ערך אמריקאי לפי סימול, שם חברה או בורסה",
-    tabs: { summary: "תקציר", decision: "החלטה ודוח", graham: "קריטריוני גרהם", valuation: "הערכת שווי", financials: "דוחות כספיים", data: "נתונים ומקורות" },
+    tabs: { summary: "תקציר", decision: "החלטה ודוח", graham: "קריטריוני גרהם", valuation: "הערכת שווי", financials: "דוחות כספיים", latest: "רבעון אחרון ו-TTM", data: "נתונים ומקורות" },
     price: "שער סגירה אחרון",
     priceChart: "היסטוריית מחיר",
     noPrice: "אין נתוני מחיר שמורים",
@@ -534,4 +538,6 @@ export const he: Dictionary = {
   graham: grahamHe,
   valuationDashboard: valuationHe,
   decision: decisionHe,
+  interim: interimHe,
+  holdings: holdingsHe,
 };
