@@ -352,6 +352,7 @@ export async function getSecurityAnalysis(
     newerFiling,
     quoteConflict: quote.verification.status === "CONFLICT",
     usesDevFixtureData: freshness.usesDevFixtureData,
+    industryClass: inputs.classification?.industryClass ?? null,
   });
   const finVerifications = openVerifications.filter((v) => v.dataset === "financials");
   const health: DataHealth = {

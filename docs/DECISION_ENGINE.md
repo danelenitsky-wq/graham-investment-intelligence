@@ -37,7 +37,10 @@ API and no LLM is required.
 1. **INSUFFICIENT VERIFIED DATA** — gate fails (missing / stale / conflicting / fixture data),
    validation errors, or only a historical price. Applies to owned positions too: nothing is
    flagged for sale on unreliable data. Also when the strategy has no applicable rules for the
-   issuer type, or required non-price criteria lack data.
+   issuer type, or required non-price criteria lack data. The gate does not require current
+   assets or current liabilities for banks, insurers, REITs and other financials (their balance
+   sheets are unclassified), and accepts total equity including noncontrolling interests where
+   parent equity is not tagged (the Graham engine derives parent equity from it).
 2. Owned positions (assessed under the position's **thesis strategy** when recorded):
    - **REVIEW FOR SALE** when a trigger fires: thesis invalidated (strategy's non-price criteria
      fail), fundamentals deteriorated (critical risk, weak financial condition, recent deficit),
@@ -54,6 +57,9 @@ API and no LLM is required.
    - **BUY CANDIDATE** — everything passes with verified data. Confidence is LOW (with the reason
      listed) when the strategy counts a rule whose wording is UNVERIFIED, when no intrinsic value
      margin exists, when figures are not cross-verified, or when risk data is partial.
+   - Confidence is set only for BUY CANDIDATE and HOLD (STANDARD or LOW). For AVOID, WAIT,
+     REVIEW FOR SALE and INSUFFICIENT VERIFIED DATA it is `null` by design: those are not
+     positive calls whose strength needs qualifying.
 
 Application assumptions (Settings → Decision assumptions): default strategy (DEFENSIVE), maximum
 position weight (20%), excessive valuation multiple (1.5×), optional requirement of an intrinsic

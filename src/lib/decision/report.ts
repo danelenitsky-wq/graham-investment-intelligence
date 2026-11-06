@@ -20,7 +20,7 @@ import type { IntrinsicResult } from "@/lib/valuation/intrinsic";
 import { renderFactorReason, renderStatement } from "./render";
 import type { DecisionResult, PositionContext } from "./types";
 
-export const REPORT_TEMPLATE_VERSION = "1.0.0";
+export const REPORT_TEMPLATE_VERSION = "1.0.1";
 
 export type ReportSectionId =
   | "executiveSummary"
@@ -251,7 +251,7 @@ export function buildResearchReport(inputs: ReportInputs, dict: Dictionary, loca
     const cls = graham.classification;
     const issuerType = fmt(dict.graham.issuerType, {
       type: (dict.graham.industryClass as Record<string, string>)[cls.industryClass] ?? cls.industryClass,
-      basis: (dict.graham.classificationBasis as Record<string, string>)[cls.basis] ?? cls.basis,
+      basis: fmt((dict.graham.classificationBasis as Record<string, string>)[cls.basis] ?? cls.basis, { sic: cls.sicCode ?? s.sicCode ?? MISSING }),
     });
     x.paragraphs.push(fmt(t.overview, { name, exchange: s.exchangeName, ticker: s.ticker, issuerType }));
     x.tables.push({

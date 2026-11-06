@@ -7,7 +7,7 @@ import { fmt, type Dictionary } from "@/lib/i18n";
 import { formatCurrency, formatDate, formatNumber, MISSING } from "@/lib/format";
 import type { CodedStatement, FactorAssessment } from "./types";
 
-const CURRENCY_PARAMS = new Set(["price", "ceiling", "excessiveAbove", "level", "targetPrice", "intrinsicValue", "ncavPerShare", "threshold"]);
+const CURRENCY_PARAMS = new Set(["price", "ceiling", "excessiveAbove", "level", "targetPrice", "intrinsicValue", "ncavPerShare", "threshold", "reference"]);
 const PERCENT_PARAMS = new Set(["change", "percent", "weight", "maxWeight", "target", "targetPercent", "share"]);
 const MULTIPLE_PARAMS = new Set(["priceToCeiling", "multiple"]);
 

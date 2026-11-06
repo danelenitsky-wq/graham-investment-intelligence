@@ -43,6 +43,25 @@ describe("research report", () => {
     for (const s of report.sections) expect(s.paragraphs.length + s.bullets.length + s.tables.length, s.id).toBeGreaterThan(0);
   });
 
+  it.each(["en", "he"] as const)("%s: fills the SIC code into the issuer-type sentence", (locale) => {
+    const { report } = reportFor({ price: 60, industry: { sicCode: "3560" } }, locale);
+    const overview = report.sections.find((x) => x.id === "companyOverview")!.paragraphs.join(" ");
+    expect(overview).toContain("3560");
+    expect(overview).not.toMatch(/\{\w+\}/);
+  });
+
+  it("does not present the excessive-valuation level as the intrinsic value", () => {
+    const { s, report } = reportFor({ price: 200 });
+    const iv = s.intrinsic.value!;
+    const line = allText(report)
+      .split("\n")
+      .find((l) => l.includes("excessive-valuation level"));
+    expect(line).toBeDefined();
+    expect(line).toContain(`$${iv.toFixed(2)}`);
+    expect(line).toContain(`$${(iv * 1.5).toFixed(2)}`);
+    expect(line).toMatch(/intrinsic value estimate of ⁦\$/);
+  });
+
   it("states the classification and figures that come from the engines", () => {
     const { s, report } = reportFor({ price: 60 });
     const summary = report.sections[0].paragraphs.join(" ");

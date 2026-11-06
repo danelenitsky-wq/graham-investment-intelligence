@@ -42,7 +42,7 @@ import type {
   Strategy,
 } from "./types";
 
-export const DECISION_ENGINE_VERSION = "1.0.0";
+export const DECISION_ENGINE_VERSION = "1.1.0";
 
 /** Rules whose outcome depends on the market price (Graham's valuation limits). */
 export const PRICE_RULE_IDS = new Set(["D6", "D7", "E6", "E7", "NN1"]);
@@ -175,12 +175,12 @@ function earningsStabilityFactor(inputs: DecisionInputs): FactorAssessment {
 }
 
 /** Reference value and the price above which valuation counts as excessive. */
-function excessiveLevel(inputs: DecisionInputs, row: CeilingRow): { value: Num; basis: "INTRINSIC" | "CEILING" | null } {
+function excessiveLevel(inputs: DecisionInputs, row: CeilingRow): { value: Num; reference: Num; basis: "INTRINSIC" | "CEILING" | null } {
   const m = inputs.settings.excessiveValuationMultiple;
   const iv = inputs.intrinsic?.status === "ESTABLISHED" ? inputs.intrinsic.value : null;
-  if (iv !== null && iv > 0) return { value: iv * m, basis: "INTRINSIC" };
-  if (row.ceiling.status === "ESTABLISHED" && row.ceiling.value !== null && row.ceiling.value > 0) return { value: row.ceiling.value * m, basis: "CEILING" };
-  return { value: null, basis: null };
+  if (iv !== null && iv > 0) return { value: iv * m, reference: iv, basis: "INTRINSIC" };
+  if (row.ceiling.status === "ESTABLISHED" && row.ceiling.value !== null && row.ceiling.value > 0) return { value: row.ceiling.value * m, reference: row.ceiling.value, basis: "CEILING" };
+  return { value: null, reference: null, basis: null };
 }
 
 function valuationFactor(inputs: DecisionInputs, strategy: Strategy): FactorAssessment {
@@ -199,6 +199,7 @@ function valuationFactor(inputs: DecisionInputs, strategy: Strategy): FactorAsse
     changeRequired: row.comparison.changeRequired ?? "—",
     priceToCeiling: price !== null && c.value !== null && c.value > 0 ? price / c.value : "—",
     excessiveAbove: exc.value ?? "—",
+    reference: exc.reference ?? "—",
     multiple: inputs.settings.excessiveValuationMultiple,
     ceilingReason: c.reason,
   };
