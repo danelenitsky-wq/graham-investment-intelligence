@@ -7,6 +7,8 @@ export async function GET() {
     await db.$queryRaw`SELECT 1`;
     return NextResponse.json({ status: "ok", database: "up", time: new Date().toISOString() });
   } catch (e) {
-    return NextResponse.json({ status: "degraded", database: "down", error: e instanceof Error ? e.message : String(e) }, { status: 503 });
+    // The driver message can include host names or connection details: log it, do not return it.
+    console.error("[health] database check failed", e);
+    return NextResponse.json({ status: "degraded", database: "down" }, { status: 503 });
   }
 }

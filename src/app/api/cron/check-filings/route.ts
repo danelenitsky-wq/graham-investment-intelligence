@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { env } from "@/server/env";
+import { safeEqual } from "@/lib/security/access";
 import { checkAllFilings } from "@/server/filings";
 
 /**
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
   const secret = env().CRON_SECRET;
   if (!secret) return Response.json({ error: "NOT_CONFIGURED" }, { status: 404 });
-  if (auth !== `Bearer ${secret}`) return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  if (!auth || !safeEqual(auth, `Bearer ${secret}`)) return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const results = await checkAllFilings();
   const count = (s: string) => results.filter((r) => r.status === s).length;
   return Response.json(

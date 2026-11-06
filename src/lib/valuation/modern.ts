@@ -71,10 +71,13 @@ export function inflationAdjustedSize(params: {
  * Graham proposed the 4.4/Y scaling (4.4% being the AAA corporate yield he
  * referenced) after the 1973 edition; it is therefore a modern extension here.
  */
-export function bondYieldAdjustedFormula(params: { earnings: Num; growthPercent: Num; aaaYieldPercent: Num }): ValueEstimate {
+export function bondYieldAdjustedFormula(params: { earnings: Num; growthPercent: Num; aaaYieldPercent: Num; rejectedHistoricalGrowth?: Num }): ValueEstimate {
   const { earnings, growthPercent, aaaYieldPercent } = params;
   const inputs = { earnings, growthPercent, aaaYieldPercent, referenceYield: 4.4 };
   const base = { id: "modern.bondYieldAdjusted", methodology: "MODERN_EXTENSION" as const, inputs };
+  if (params.rejectedHistoricalGrowth !== undefined && params.rejectedHistoricalGrowth !== null) {
+    return { ...base, inputs: { ...inputs, historicalGrowthPercent: params.rejectedHistoricalGrowth }, status: "NOT_MEANINGFUL", value: null, reason: "growthAboveFormulaRange" };
+  }
   if (earnings === null || growthPercent === null || aaaYieldPercent === null) {
     return { ...base, status: "INSUFFICIENT_DATA", value: null, reason: aaaYieldPercent === null ? "missingBondYield" : "missingInputs" };
   }

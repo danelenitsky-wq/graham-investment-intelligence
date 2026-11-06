@@ -16,6 +16,7 @@ import type { CpiReference, GrahamInputs, ScreenResult } from "@/lib/graham/type
 import type { CanonicalConcept } from "@/lib/normalization/concepts";
 import type { AnnualFinancials } from "@/lib/normalization/statements";
 import { valueWithGraham, VALUATION_ENGINE_VERSION, type GrahamValuation, type ValueEstimate } from "@/lib/valuation/graham";
+import { adjustedChartSeries } from "@/lib/normalization/market";
 import { bondYieldAdjustedFormula, modernMetrics, type ModernMetrics } from "@/lib/valuation/modern";
 import { buildValuationDashboard, resolvePriceContext, type ValuationDashboard } from "@/lib/valuation/engine";
 import { buildIntrinsicBase, computeIntrinsicValue, defaultAssumptions, type AssumptionDefaults, type IntrinsicBase, type IntrinsicResult } from "@/lib/valuation/intrinsic";
@@ -298,7 +299,7 @@ export async function getSecurityAnalysis(
   const valuation = valueWithGraham({ annual, price: comparablePrice, growthPercentOverride: options.growthPercentOverride });
   const aaa = settings.aaaBondYield?.value ?? null;
   const modern = {
-    bondYieldAdjusted: bondYieldAdjustedFormula({ earnings: valuation.normalEarnings, growthPercent: valuation.growthPercentUsed, aaaYieldPercent: aaa }),
+    bondYieldAdjusted: bondYieldAdjustedFormula({ earnings: valuation.normalEarnings, growthPercent: valuation.growthPercentUsed, aaaYieldPercent: aaa, rejectedHistoricalGrowth: valuation.rejectedHistoricalGrowth }),
     metrics: modernMetrics({ annual, price: comparablePrice, normalEarnings: valuation.normalEarnings, aaaYieldPercent: aaa }),
   };
 
@@ -430,8 +431,15 @@ export async function getSecurityAnalysis(
     }
   }
 
+  // Chart series: split- and dividend-adjusted close (Tiingo adjClose), so a split is not drawn
+  // as a crash (NVDA 10:1 in 2024, GOOGL 20:1 in 2022). The latest adjusted close equals the
+  // latest close, so today's price lines up with the current per-share thresholds. Bars without
+  // an adjusted value fall back to the raw close only when no split exists after them.
+  const history = adjustedChartSeries(
+    bars.map((b) => ({ date: iso(b.date), close: Number(b.close), adjClose: b.adjClose === null ? null : Number(b.adjClose) })),
+    actions.filter((a) => a.type === "STOCK_SPLIT").map((a) => iso(a.exDate)),
+  );
   // Down-sample long histories to weekly closes for charting (keeps the RSC payload small).
-  const history = bars.map((b) => ({ date: iso(b.date), close: Number(b.close) }));
   const priceHistory = history.length > 1500 ? history.filter((_, i) => i % 5 === 0 || i === history.length - 1) : history;
 
   return {
