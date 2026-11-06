@@ -19,6 +19,7 @@ import { valueWithGraham, VALUATION_ENGINE_VERSION, type GrahamValuation, type V
 import { adjustedChartSeries } from "@/lib/normalization/market";
 import { bondYieldAdjustedFormula, modernMetrics, type ModernMetrics } from "@/lib/valuation/modern";
 import { buildValuationDashboard, resolvePriceContext, type ValuationDashboard } from "@/lib/valuation/engine";
+import { buildFairValue, type FairValueSummary } from "@/lib/valuation/fair-value";
 import { buildIntrinsicBase, computeIntrinsicValue, defaultAssumptions, type AssumptionDefaults, type IntrinsicBase, type IntrinsicResult } from "@/lib/valuation/intrinsic";
 import type { AppSettings } from "@/lib/settings/schema";
 import { evaluateDataSufficiency, type GateResult } from "@/lib/freshness/gate";
@@ -145,6 +146,8 @@ export interface SecurityAnalysis {
   valuationDashboard: ValuationDashboard;
   /** Optional conservative intrinsic value (MODERN EXTENSION) with its base data and default assumptions. */
   intrinsic: { base: IntrinsicBase; defaults: AssumptionDefaults; result: IntrinsicResult };
+  /** Bottom-line summary: market price vs a blended fair value range from the models that fit. */
+  fairValue: FairValueSummary;
   freshness: FreshnessReport;
   /** Application-defined research classification (deterministic; see src/lib/decision). */
   decision: DecisionResult;
@@ -327,6 +330,16 @@ export async function getSecurityAnalysis(
     normalizationYears: settings.valuation.normalizationYears,
   });
   const intrinsic = { base: intrinsicBase, defaults: intrinsicDefaults, result: computeIntrinsicValue(intrinsicBase, intrinsicDefaults.assumptions) };
+  const fairValue = buildFairValue({
+    intrinsic: intrinsic.result,
+    graham: valuation,
+    ncavPerShare: graham.netNet.ncavPerShare,
+    grahamNumber: valuationDashboard.grahamNumber.ceiling.value,
+    netNetThreshold: valuationDashboard.netNet.ceiling.value,
+    price: valuationDashboard.price.comparable,
+    currency: lastCurrency ?? null,
+    historicalRevenueGrowth: intrinsicDefaults.historical.revenueCagr,
+  });
   const fundamentalsFixture = provenance.some((p) => p.isDevFixture);
   const freshness: FreshnessReport = {
     prices: priceFreshness(price?.date ?? null, today, price?.isDevFixture ?? false, settings.freshness),
@@ -483,6 +496,7 @@ export async function getSecurityAnalysis(
     modern,
     valuationDashboard,
     intrinsic,
+    fairValue,
     freshness,
     decision,
     position,

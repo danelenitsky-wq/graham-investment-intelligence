@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AnalysisTabs } from "@/components/analysis/analysis-tabs";
 import { DataPanel } from "@/components/analysis/data-panel";
 import { DecisionPanel } from "@/components/analysis/decision-panel";
+import { FairValueCard } from "@/components/analysis/fair-value-card";
 import { FinancialHistory } from "@/components/analysis/financial-history";
 import { GrahamPanels } from "@/components/analysis/graham-panels";
 import { InterimDeteriorationBanner, InterimPanel } from "@/components/analysis/interim-panel";
@@ -69,6 +70,7 @@ async function Analysis({ params, searchParams }: Props) {
           </>
         }
       />
+      <FairValueCard a={a} dict={dict} locale={locale} gated={gated} />
       <AnalysisTabs
         items={[
           {

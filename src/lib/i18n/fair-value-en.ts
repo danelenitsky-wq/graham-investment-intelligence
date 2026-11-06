@@ -1,0 +1,66 @@
+/** Bottom-line fair value card (English). */
+export const fairValueEn = {
+  title: "Bottom line",
+  subtitle: "Market price compared with what the stock is worth by the valuation models that fit this company",
+  marketPrice: "Market price",
+  fairValue: "Estimated fair value",
+  range: "Range {range}",
+  gapLabel: "Gap from price to estimate",
+  gapRange: "Across the range: {low} to {high}",
+  verdict: {
+    BELOW_ESTIMATE: "The price is below the estimated value. Reaching the estimate would mean a rise of {pct}.",
+    NEAR_ESTIMATE: "The price is close to the estimated value ({pct}).",
+    ABOVE_ESTIMATE: "The price is above the estimated value. Reaching the estimate would mean a fall of {pct}.",
+  },
+  bar: { price: "Price", estimate: "Estimate", range: "Value range" },
+  scenarios: {
+    title: "Scenarios where the value is above the price",
+    count: "{above} of {total} scenarios",
+    note: "Each scenario changes the required return and the growth assumption. This shows how much the result depends on the assumptions. It is not a probability and not a forecast of the share price.",
+  },
+  implied: {
+    title: "What today's price assumes",
+    value: "To justify today's price, revenue would need to grow about {pct} a year for {years} years. The estimate assumes {assumed}.",
+    above: "Even revenue growth of {pct} a year for {years} years would not justify today's price. The estimate assumes {assumed}.",
+    below: "The price is below the value even if revenue shrinks {pct} a year.",
+    historical: "Past revenue growth: {hist} a year.",
+  },
+  models: {
+    title: "How the estimate is built",
+    names: {
+      dcf: "Discounted earnings (DCF)",
+      grahamFormula: "Graham's growth formula E × (8.5 + 2G)",
+      ncav: "Net current asset value (NCAV) per share",
+      grahamNumber: "Graham Number",
+      netNetThreshold: "Net-Net buy threshold (⅔ of NCAV)",
+    },
+    roles: { USED: "Counted", NOT_AVAILABLE: "Not available", NOT_A_VALUE: "Not counted", FALLBACK_ONLY: "Not counted" },
+    reasons: {
+      computed: "",
+      userGrowth: "Uses your growth rate G.",
+      assetFallback: "Used because no earnings-based model is available. This is an asset value, not the value of the business.",
+      earningsModelsPreferred: "An asset value. Counted only when no earnings-based model is available.",
+      nonPositiveNcav: "Net current assets are zero or negative.",
+      screeningLimit: "The highest price a Graham screening rule allows. A limit, not an estimate of value.",
+      bargainThreshold: "An entry price for asset bargains. For a profitable company it is far below what the business is worth.",
+      growthAboveFormulaRange: "Past earnings growth is above 20% a year, beyond the formula's range.",
+      missingInputs: "Required inputs are missing.",
+      nonPositiveEarnings: "Average earnings are zero or negative.",
+      negativeMultiplier: "The growth assumption produces a negative multiplier.",
+      disabled: "The intrinsic value model is switched off in Settings.",
+    },
+  },
+  flags: {
+    modelsDisagree: "The models disagree by more than 2×. Treat the estimate with extra caution.",
+    terminalHeavy: "Most of the DCF value comes from the years after the forecast. Treat with caution.",
+    assetBasedOnly: "Based on assets only: no earnings-based model fits this company.",
+    gated: "The data is not sufficient for a reliable analysis. The estimate is for reference only.",
+  },
+  assumptions: "Conservative assumptions from the company's own history: required return {r}, revenue growth {g} a year (capped at 8%). You can change them in the valuation tab.",
+  noModel: "No valuation model fits this company with the available data, so no fair value is shown.",
+  noPrice: "No comparable market price, so the gap is not shown.",
+  details: "Full valuation details",
+  disclaimer: "Analysis only, not a recommendation and not a price forecast.",
+};
+
+export type FairValueDictionary = typeof fairValueEn;
