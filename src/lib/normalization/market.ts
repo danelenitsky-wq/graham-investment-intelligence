@@ -121,3 +121,21 @@ export function normalizeCurrencyUnit(price: number, currency: string): { price:
   if (currency === "GBX" || currency === "GBp") return { price: price / 100, currency: "GBP" };
   return { price, currency };
 }
+
+/**
+ * Price series for charts and 1-year ranges: the split- and dividend-adjusted
+ * close (Tiingo adjClose), so a split is not drawn as a crash (NVDA 10:1 in
+ * 2024, GOOGL 20:1 in 2022). The latest adjusted close equals the latest
+ * close, so today's price lines up with current per-share thresholds. A bar
+ * without an adjusted value is kept (raw close) only when no split follows it.
+ */
+export function adjustedChartSeries(
+  bars: { date: string; close: number; adjClose: number | null }[],
+  splitDates: string[],
+): { date: string; close: number }[] {
+  const lastSplit = splitDates.length ? [...splitDates].sort().at(-1)! : null;
+  return bars.flatMap((b) => {
+    if (b.adjClose !== null && Number.isFinite(b.adjClose)) return [{ date: b.date, close: b.adjClose }];
+    return lastSplit === null || b.date >= lastSplit ? [{ date: b.date, close: b.close }] : [];
+  });
+}

@@ -73,3 +73,24 @@ describe("access control", () => {
     expect(decideAccess("/he", null, cfg({ password: null, production: false }))).toBe("ALLOW");
   });
 });
+
+import { adjustedChartSeries } from "@/lib/normalization/market";
+
+describe("price chart series", () => {
+  it("uses adjusted closes so a 10:1 split is not drawn as a 90% fall", () => {
+    const bars = [
+      { date: "2024-06-07", close: 1200, adjClose: 120 },
+      { date: "2024-06-10", close: 121, adjClose: 121 },
+    ];
+    const s = adjustedChartSeries(bars, ["2024-06-10"]);
+    expect(s.map((x) => x.close)).toEqual([120, 121]);
+  });
+  it("drops unadjusted bars before a split rather than mixing scales", () => {
+    const bars = [
+      { date: "2024-06-07", close: 1200, adjClose: null },
+      { date: "2024-06-10", close: 121, adjClose: null },
+    ];
+    expect(adjustedChartSeries(bars, ["2024-06-10"])).toEqual([{ date: "2024-06-10", close: 121 }]);
+    expect(adjustedChartSeries(bars, [])).toHaveLength(2);
+  });
+});

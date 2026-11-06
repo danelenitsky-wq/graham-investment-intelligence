@@ -325,14 +325,16 @@ async function latestStoredClose(securityId: string, calendar: ReturnType<typeof
 /** Values computed from stored data when the quote provider does not supply them (labelled "derived" in the UI). */
 async function derivedFields(securityId: string, now: Date) {
   const since = new Date(now.getTime() - 365 * 86_400_000);
-  const [agg, shares] = await Promise.all([
+  const [agg, shares, splitInWindow] = await Promise.all([
     db.priceBar.aggregate({ where: { securityId, date: { gte: since } }, _max: { high: true, close: true }, _min: { low: true, close: true }, _count: true }),
     db.financialLineItem.findFirst({
       where: { concept: "sharesOutstanding", statement: { securityId } },
       orderBy: { statement: { periodEnd: "desc" } },
     }),
+    // Stored bars are unadjusted: a split inside the window would mix pre- and post-split prices.
+    db.corporateAction.findFirst({ where: { securityId, type: "STOCK_SPLIT", exDate: { gte: since } }, select: { id: true } }),
   ]);
-  const hasYear = agg._count >= 200;
+  const hasYear = agg._count >= 200 && !splitInWindow;
   return {
     yearHigh: hasYear ? n(agg._max.high ?? agg._max.close) : null,
     yearLow: hasYear ? n(agg._min.low ?? agg._min.close) : null,
