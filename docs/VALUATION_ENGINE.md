@@ -59,3 +59,25 @@ Sensitivity: 5 × 5 grid, discount rate ±1pp steps × revenue growth ±2pp (DCF
 MoS = (Intrinsic value − Price) / Intrinsic value × 100, only against the intrinsic value model;
 otherwise **NOT ESTABLISHED**. The target (default 30%) is an application assumption, adjustable
 on the page and in Settings; the page shows the price meeting the target and the change required.
+
+## Bottom-line fair value (`src/lib/valuation/fair-value.ts`)
+
+A plain-language card at the top of the stock page: market price, an estimated fair value
+(low / base / high), the % gap between them, a range bar with one dot per scenario, and the
+revenue growth the market price implies.
+
+| Model | Counted? |
+| --- | --- |
+| DCF intrinsic value (modern extension) | Yes, when established. Range = its sensitivity band; its 5 × 5 grid supplies the scenarios |
+| Graham growth formula E × (8.5 + 2G) | Yes, when G is accepted (default G above 20% is refused). Scenarios G − 2pp, G, G + 2pp |
+| NCAV per share | Only as a fallback when neither earnings model is available (asset value, flagged) |
+| Graham Number, defensive / enterprising ceilings | Never: screening limits, not values |
+| Net-Net ⅔ × NCAV threshold | Never: a bargain entry price, far below the value of a profitable company |
+
+Base = equal-weight average of the counted models; range = lowest low to highest high. Verdict:
+price within ±10% of the base is "near the estimate". Models more than 2× apart are flagged.
+"Scenarios above price" counts computed scenarios whose value exceeds the price. It shows how much
+the result depends on the assumptions and is **not** a probability or a price forecast.
+"Implied growth" solves the DCF (bisection, −30% to +60%) for the yearly revenue growth at which
+the value equals the price, all other assumptions unchanged. The margin of safety elsewhere on the
+page is still measured against the DCF intrinsic value only.

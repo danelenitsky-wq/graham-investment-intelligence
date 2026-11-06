@@ -1,3 +1,4 @@
+import { fairValueHe } from "./fair-value-he";
 import { decisionHe } from "./decision-he";
 import { holdingsHe } from "./holdings-he";
 import { valuationHe } from "./valuation-he";
@@ -537,6 +538,7 @@ export const he: Dictionary = {
   },
   graham: grahamHe,
   valuationDashboard: valuationHe,
+  fairValue: fairValueHe,
   decision: decisionHe,
   interim: interimHe,
   holdings: holdingsHe,

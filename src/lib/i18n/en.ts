@@ -1,3 +1,4 @@
+import { fairValueEn } from "./fair-value-en";
 import { decisionEn } from "./decision-en";
 import { holdingsEn } from "./holdings-en";
 import { valuationEn } from "./valuation-en";
@@ -537,6 +538,7 @@ export const en = {
   },
   graham: grahamEn,
   valuationDashboard: valuationEn,
+  fairValue: fairValueEn,
   decision: decisionEn,
   interim: interimEn,
   holdings: holdingsEn,
