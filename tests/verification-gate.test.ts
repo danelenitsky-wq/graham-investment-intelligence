@@ -90,6 +90,25 @@ describe("data sufficiency gate (INSUFFICIENT VERIFIED DATA)", () => {
     usesDevFixtureData: false,
   };
 
+  const withoutConcepts = (...drop: string[]) => Object.fromEntries(Object.entries(ok.latestAnnual!).filter(([k]) => !drop.includes(k)));
+
+  it("requires current assets and liabilities for industrial issuers", () => {
+    const r = evaluateDataSufficiency({ ...ok, latestAnnual: withoutConcepts("currentAssets", "currentLiabilities"), industryClass: "INDUSTRIAL" });
+    expect(r.sufficient).toBe(false);
+    expect(r.missing).toEqual(["concept:currentAssets", "concept:currentLiabilities"]);
+  });
+
+  it.each(["BANK", "INSURANCE", "REIT", "OTHER_FINANCIAL"])("does not require a classified balance sheet for %s", (industryClass) => {
+    const r = evaluateDataSufficiency({ ...ok, latestAnnual: withoutConcepts("currentAssets", "currentLiabilities"), industryClass });
+    expect(r.missing).toEqual([]);
+    expect(r.sufficient).toBe(true);
+  });
+
+  it("accepts total equity including NCI in place of parent equity, but not neither", () => {
+    expect(evaluateDataSufficiency({ ...ok, latestAnnual: { ...withoutConcepts("stockholdersEquity"), totalEquityInclNci: 1 } }).sufficient).toBe(true);
+    expect(evaluateDataSufficiency({ ...ok, latestAnnual: withoutConcepts("stockholdersEquity") }).missing).toEqual(["concept:stockholdersEquity"]);
+  });
+
   it("passes with complete, current, consistent data", () => {
     expect(evaluateDataSufficiency(ok).sufficient).toBe(true);
     expect(evaluateDataSufficiency({ ...ok, quoteStatus: "CACHED" }).sufficient).toBe(true);

@@ -21,6 +21,30 @@ export const REQUIRED_CONCEPTS: CanonicalConcept[] = [
   "stockholdersEquity",
 ];
 
+/**
+ * Financial issuers (banks, insurers, REITs, other financials) present an
+ * unclassified balance sheet: no current assets or current liabilities exist
+ * to report, so their absence is not a data gap.
+ */
+const UNCLASSIFIED_BALANCE_SHEET_CLASSES = new Set(["BANK", "INSURANCE", "REIT", "OTHER_FINANCIAL"]);
+const CLASSIFIED_ONLY: CanonicalConcept[] = ["currentAssets", "currentLiabilities"];
+
+/** Concepts the gate requires for an issuer of this class. */
+export function requiredConcepts(industryClass?: string | null): CanonicalConcept[] {
+  return industryClass && UNCLASSIFIED_BALANCE_SHEET_CLASSES.has(industryClass) ? REQUIRED_CONCEPTS.filter((c) => !CLASSIFIED_ONLY.includes(c)) : REQUIRED_CONCEPTS;
+}
+
+/**
+ * Whether a required concept is present. Parent equity also counts as present
+ * when only total equity including noncontrolling interests is tagged (e.g.
+ * Johnson & Johnson's recent 10-Ks): the Graham engine derives parent equity
+ * from it (registry AI-EQUITY-NCI) and flags that derivation.
+ */
+function hasConcept(values: Partial<Record<CanonicalConcept, number>>, c: CanonicalConcept): boolean {
+  if (values[c] !== undefined) return true;
+  return c === "stockholdersEquity" && values.totalEquityInclNci !== undefined;
+}
+
 export type GateField = "price" | "financials" | `concept:${CanonicalConcept}` | "dividends";
 
 export interface GateInput {
@@ -34,6 +58,8 @@ export interface GateInput {
   newerFiling: { form: string; filedAt: string; accessionNumber: string } | null;
   quoteConflict: boolean;
   usesDevFixtureData: boolean;
+  /** Issuer class from the Graham classification; financial issuers skip current assets/liabilities. */
+  industryClass?: string | null;
 }
 
 export interface GateResult {
@@ -57,7 +83,7 @@ export function evaluateDataSufficiency(input: GateInput): GateResult {
   else if (input.fundamentals.level === "STALE") stale.push("financials");
 
   if (input.latestAnnual) {
-    for (const c of REQUIRED_CONCEPTS) if (input.latestAnnual[c] === undefined) missing.push(`concept:${c}`);
+    for (const c of requiredConcepts(input.industryClass)) if (!hasConcept(input.latestAnnual, c)) missing.push(`concept:${c}`);
   }
   if (input.newerFiling) {
     stale.push("financials");

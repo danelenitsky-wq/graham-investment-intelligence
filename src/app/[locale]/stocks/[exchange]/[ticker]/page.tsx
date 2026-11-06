@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { AnalysisTabs } from "@/components/analysis/analysis-tabs";
 import { DataPanel } from "@/components/analysis/data-panel";
+import { DecisionPanel } from "@/components/analysis/decision-panel";
 import { FinancialHistory } from "@/components/analysis/financial-history";
 import { GrahamPanels } from "@/components/analysis/graham-panels";
 import { SecurityHeader } from "@/components/analysis/security-header";
@@ -15,6 +16,8 @@ import { securityPath } from "@/lib/i18n/paths";
 import { findSecurity, getSecurityAnalysis } from "@/server/analysis";
 import { isOnWatchlist } from "@/server/watchlist";
 import { getQuoteView } from "@/server/quotes";
+import { compareStored, listDecisionSnapshots, researchReport } from "@/server/decision";
+import { STRATEGIES, type Strategy } from "@/lib/decision";
 
 type Props = PageProps<"/[locale]/stocks/[exchange]/[ticker]">;
 
@@ -31,13 +34,23 @@ async function Analysis({ params, searchParams }: Props) {
   const { locale, dict } = await resolveLocale(params);
   const sp = await searchParams;
   const g = typeof sp.g === "string" && sp.g.trim() !== "" && Number.isFinite(Number(sp.g)) ? Number(sp.g) : null;
+  const strategy = typeof sp.strategy === "string" && STRATEGIES.includes(sp.strategy as Strategy) ? (sp.strategy as Strategy) : null;
+  const str = (v: unknown) => (typeof v === "string" && v ? v : null);
 
   const security = await findSecurity(decodeURIComponent(exchange), decodeURIComponent(ticker));
   if (!security) notFound();
   // Opening the page fetches the latest available quote (subject to the cache policy).
   const quote = await getQuoteView(security.id);
-  const [a, onWatchlist] = await Promise.all([getSecurityAnalysis(security.id, { growthPercentOverride: g, quote }), isOnWatchlist(security.id)]);
+  const [a, onWatchlist, snapshots] = await Promise.all([
+    getSecurityAnalysis(security.id, { growthPercentOverride: g, quote, strategy }),
+    isOnWatchlist(security.id),
+    listDecisionSnapshots(security.id),
+  ]);
   if (!a) notFound();
+  const report = researchReport(a, locale);
+  const fromSnap = snapshots.find((x) => x.id === str(sp.from));
+  const toSnap = snapshots.find((x) => x.id === str(sp.to));
+  const comparison = fromSnap && toSnap && fromSnap.id !== toSnap.id ? compareStored(fromSnap, toSnap) : snapshots.length >= 2 && !sp.from && !sp.to ? compareStored(snapshots[1], snapshots[0]) : null;
   const gated = !a.health.gate.sufficient;
   const gate = gated ? <InsufficientDataBanner dict={dict} /> : null;
 
@@ -65,6 +78,23 @@ async function Analysis({ params, searchParams }: Props) {
                 {gate}
                 <SummaryPanel a={a} dict={dict} locale={locale} gated={gated} />
               </div>
+            ),
+          },
+          {
+            value: "decision",
+            label: dict.stock.tabs.decision,
+            content: (
+              <DecisionPanel
+                a={a}
+                dict={dict}
+                locale={locale}
+                report={report}
+                snapshots={snapshots}
+                comparison={comparison}
+                compareIds={{ from: fromSnap?.id ?? null, to: toSnap?.id ?? null }}
+                action={securityPath(locale, a.security.exchangeCode, a.security.ticker)}
+                strategyParam={strategy}
+              />
             ),
           },
           {

@@ -6,6 +6,7 @@ import { loadDevFixtures, refreshSecurity, syncUniverse, type RefreshOutcome } f
 import { getDefaultPortfolio } from "@/server/portfolio";
 import { getSettings, saveSettings } from "@/server/settings";
 import { getDefaultWatchlist } from "@/server/watchlist";
+import { saveDecisionSnapshot } from "@/server/decision";
 import { settingsSchema } from "@/lib/settings/schema";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string; code?: string };
@@ -63,12 +64,14 @@ const positionSchema = z.object({
   exchange: z.string().trim().min(1).max(16).transform((s) => s.toUpperCase()),
   quantity: z.coerce.number().positive(),
   averageCost: z.coerce.number().positive(),
+  thesisStrategy: z.preprocess((v) => (v === "" || v === undefined ? null : v), z.enum(["DEFENSIVE", "ENTERPRISING", "NET_NET"]).nullable()).optional(),
 });
 
 export async function addPositionAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const parsed = positionSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "invalid", code: "INVALID" };
   const { ticker, exchange, quantity, averageCost } = parsed.data;
+  const thesisStrategy = parsed.data.thesisStrategy ?? null;
   const security = await db.security.findFirst({ where: { ticker, exchange: { code: exchange } }, include: { exchange: true } });
   if (!security) return { ok: false, error: "notFound", code: "NOT_FOUND" };
   const portfolio = await getDefaultPortfolio();
@@ -80,10 +83,10 @@ export async function addPositionAction(_prev: ActionResult | null, formData: Fo
       const total = q0 + quantity;
       await tx.position.update({
         where: { id: existing.id },
-        data: { quantity: total, averageCost: (q0 * Number(existing.averageCost) + quantity * averageCost) / total },
+        data: { quantity: total, averageCost: (q0 * Number(existing.averageCost) + quantity * averageCost) / total, ...(thesisStrategy ? { thesisStrategy } : {}) },
       });
     } else {
-      await tx.position.create({ data: { portfolioId: portfolio.id, securityId: security.id, quantity, averageCost, currency, openedAt: new Date() } });
+      await tx.position.create({ data: { portfolioId: portfolio.id, securityId: security.id, quantity, averageCost, currency, openedAt: new Date(), thesisStrategy } });
     }
     await tx.portfolioTransaction.create({
       data: { portfolioId: portfolio.id, securityId: security.id, type: "BUY", tradeDate: new Date(), quantity, price: averageCost, currency },
@@ -126,10 +129,29 @@ export async function saveSettingsAction(_prev: ActionResult | null, formData: F
       terminalGrowth: Number(formData.get("terminalGrowth")) / 100,
       normalizationYears: Number(formData.get("normalizationYears")),
     },
+    decision: {
+      strategy: String(formData.get("decisionStrategy") ?? current.decision.strategy),
+      maxPositionWeight: Number(formData.get("maxPositionWeight")) / 100,
+      excessiveValuationMultiple: Number(formData.get("excessiveValuationMultiple")),
+      requireIntrinsicMarginOfSafety: formData.get("requireIntrinsicMarginOfSafety") === "on",
+    },
   };
   const parsed = settingsSchema.safeParse(candidate);
   if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.path.join(".")).join(", "), code: "INVALID" };
   await saveSettings(parsed.data);
   refresh();
   return { ok: true };
+}
+
+const strategySchema = z.enum(["DEFENSIVE", "ENTERPRISING", "NET_NET"]).nullable();
+
+/** Save a timestamped decision snapshot (inputs, sources, versions, assumptions, assessment). */
+export async function saveDecisionSnapshotAction(securityId: string, strategy: string | null): Promise<ActionResult<{ saved: boolean; id: string | null }>> {
+  try {
+    const data = await saveDecisionSnapshot(z.string().min(1).parse(securityId), { trigger: "MANUAL", strategy: strategySchema.parse(strategy) });
+    refresh();
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
 }

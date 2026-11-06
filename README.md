@@ -66,6 +66,7 @@ the real normalization → engines → UI pipeline. Every page that shows them c
 | `data:sync-universe` | SEC security master sync |
 | `data:refresh -- TICKER …` | Fetch prices + annual/quarterly statements, cross-check (FMP Basic if set, SEC dividends) |
 | `graham:real [-- TICKERS] [--no-refresh] [--out file]` | Graham engine end to end on real companies (needs network) |
+| `decision:real [-- TICKERS] [--strategy S] [--no-refresh] [--out-dir dir]` | Decision engine end to end: classification, snapshot, Markdown reports (needs network) |
 | `validate:free [-- TICKERS] [--db] [--out file]` | Live validation of the free providers (MSFT, NVDA, GOOGL by default): PASS / FAIL / BLOCKED / SKIPPED |
 | `data:check-filings [-- --force]` | Daily check for new 10-K/10-Q filings; refreshes only what changed |
 | `acceptance:quote -- TICKER [--url URL]` | Live quote acceptance test (stops at the configuration checkpoint without keys) |
@@ -148,7 +149,8 @@ Key rules the code enforces:
 Implemented: everything above. See "What remains" in the delivery notes, or the
 open items below.
 
-- Not implemented by design: investment recommendations / decision engine.
+- Decision engine: application-defined research classifications (BUY CANDIDATE, HOLD, WAIT,
+  REVIEW FOR SALE, AVOID, INSUFFICIENT VERIFIED DATA), not trading instructions. See docs/DECISION_ENGINE.md.
 - Not yet: alerts evaluation (model exists), TASE provider and calendar, IFRS (20-F) filers,
   TTM statements, FX conversion, authentication (single-user app).
 - Live retrieval runs on a machine with network access (`npm run validate:free -- --db`);

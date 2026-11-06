@@ -1,3 +1,4 @@
+import { decisionEn } from "./decision-en";
 import { valuationEn } from "./valuation-en";
 import { grahamEn } from "./graham-en";
 /** English dictionary. The Hebrew dictionary must have the same shape (enforced by type). */
@@ -116,7 +117,7 @@ export const en = {
   stock: {
     searchTitle: "Stock Analysis",
     searchSubtitle: "Search a US security by ticker, company name or exchange",
-    tabs: { summary: "Summary", graham: "Graham criteria", valuation: "Valuation", financials: "Financials", data: "Data & provenance" },
+    tabs: { summary: "Summary", decision: "Decision & report", graham: "Graham criteria", valuation: "Valuation", financials: "Financials", data: "Data & provenance" },
     price: "Last close",
     priceChart: "Price history",
     noPrice: "No price data stored",
@@ -130,8 +131,6 @@ export const en = {
     defensiveScreen: "Defensive investor (Ch. 14)",
     enterprisingScreen: "Enterprising investor (Ch. 15)",
     criteriaPassed: "{passed} of {total} criteria passed",
-    decisionPending: "Investment decision engine",
-    decisionPendingBody: "Not implemented. No buy, sell or hold opinion is produced.",
     exchange: "Exchange",
     cik: "SEC CIK",
     sector: "Sector",
@@ -533,6 +532,7 @@ export const en = {
   },
   graham: grahamEn,
   valuationDashboard: valuationEn,
+  decision: decisionEn,
 };
 
 type Widen<T> = T extends string ? string : T extends readonly (infer U)[] ? readonly Widen<U>[] : { [K in keyof T]: Widen<T[K]> };
