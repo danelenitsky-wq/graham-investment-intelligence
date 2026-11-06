@@ -171,7 +171,7 @@ export async function findSecurity(exchangeCode: string, ticker: string) {
 /** Load stored data for a security and run every engine. Read-only. */
 export async function getSecurityAnalysis(
   securityId: string,
-  options: { growthPercentOverride?: number | null; quote?: QuoteView; strategy?: Strategy | null } = {},
+  options: { growthPercentOverride?: number | null; quote?: QuoteView; strategy?: Strategy | null; position?: PositionContext | null } = {},
 ): Promise<SecurityAnalysis | null> {
   const security = await db.security.findUnique({ where: { id: securityId }, include: { exchange: true, source: true } });
   if (!security) return null;
@@ -402,7 +402,7 @@ export async function getSecurityAnalysis(
     providers: providerHealth(sourceFetches),
   };
 
-  const position = await loadPosition(securityId);
+  const position = options.position !== undefined ? options.position : await loadPosition(securityId);
   const decisionSettings: DecisionSettings = settings.decision;
   const decision = evaluateDecision({
     strategy: options.strategy ?? decisionSettings.strategy,
@@ -492,8 +492,9 @@ export async function getSecurityAnalysis(
 async function loadPosition(securityId: string): Promise<PositionContext | null> {
   const row = await db.position.findFirst({ where: { securityId }, orderBy: { createdAt: "asc" } });
   if (!row) return null;
-  const { summary } = await getPortfolioSummary();
-  const valued = summary.positions.find((p) => p.id === row.id);
+  const { holdings } = await getPortfolioSummary();
+  // Portfolio-wide weight: null when another currency cannot be converted with a sourced FX rate.
+  const valued = holdings.holdings.find((p) => p.id === row.id);
   const thesis = row.thesisStrategy;
   return {
     quantity: Number(row.quantity),

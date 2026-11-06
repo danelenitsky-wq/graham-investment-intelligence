@@ -19,6 +19,8 @@
     "data:sync-universe": "tsx --conditions=react-server --env-file=.env scripts/sync-universe.ts",
     "data:refresh": "tsx --conditions=react-server --env-file=.env scripts/refresh.ts",
     "data:check-filings": "tsx --conditions=react-server --env-file=.env scripts/check-filings.ts",
+    "alerts:check": "tsx --conditions=react-server --env-file=.env scripts/check-alerts.ts",
+    "fx:refresh": "tsx --conditions=react-server --env-file=.env scripts/refresh-fx.ts",
     "validate:free": "tsx --conditions=react-server --env-file=.env scripts/validate-free-providers.ts",
     "graham:real": "tsx --conditions=react-server --env-file=.env scripts/graham-real.ts",
     "decision:real": "tsx --conditions=react-server --env-file=.env scripts/decision-real.ts",

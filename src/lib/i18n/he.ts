@@ -1,4 +1,5 @@
 import { decisionHe } from "./decision-he";
+import { holdingsHe } from "./holdings-he";
 import { valuationHe } from "./valuation-he";
 import { grahamHe } from "./graham-he";
 import type { Dictionary } from "./en";
@@ -19,6 +20,8 @@ export const he: Dictionary = {
     financials: "היסטוריה פיננסית",
     portfolio: "תיק השקעות",
     watchlist: "רשימת מעקב",
+    alerts: "התראות",
+    history: "היסטוריית ניתוחים",
     dataHealth: "תקינות נתונים",
     settings: "הגדרות",
     sections: { research: "מחקר", holdings: "אחזקות", system: "מערכת" },
@@ -533,4 +536,5 @@ export const he: Dictionary = {
   graham: grahamHe,
   valuationDashboard: valuationHe,
   decision: decisionHe,
+  holdings: holdingsHe,
 };

@@ -9,7 +9,12 @@ with modern extensions kept clearly separate and always labelled.
 - US stocks first, **free-first data: no paid subscription required.** SEC EDGAR filings
   (source of record), Tiingo free (20+ years of official daily prices, dividends, splits,
   last close), optional free Finnhub / Twelve Data intraday quotes, optional FMP *Basic*
-  statement cross-check; data model ready for TASE
+  statement cross-check; TASE holdings with manual prices (ILS or agorot) and the Bank of
+  Israel USD/ILS rate — see [docs/TASE.md](docs/TASE.md)
+- **Portfolio, watchlist, alerts and analysis history**: manual entry and CSV import with
+  validation and preview, per-currency totals (consolidated only with a sourced FX rate),
+  Graham screens and thresholds per holding, ETF metrics, watchlist targets, edge-triggered
+  alerts without duplicates, snapshot comparison. See [docs/PORTFOLIO_ALERTS.md](docs/PORTFOLIO_ALERTS.md).
 - **Data freshness engine**: Fresh / Delayed / Last close / Cached / Stale / Unavailable / Conflicted,
   exchange calendars and timezones, 60 s refresh, Refresh Now, daily new-filing check,
   cross-source verification, and an INSUFFICIENT VERIFIED DATA gate.
@@ -70,7 +75,9 @@ the real normalization → engines → UI pipeline. Every page that shows them c
 | `validate:free [-- TICKERS] [--db] [--out file]` | Live validation of the free providers (MSFT, NVDA, GOOGL by default): PASS / FAIL / BLOCKED / SKIPPED |
 | `data:check-filings [-- --force]` | Daily check for new 10-K/10-Q filings; refreshes only what changed |
 | `acceptance:quote -- TICKER [--url URL]` | Live quote acceptance test (stops at the configuration checkpoint without keys) |
-| `test:integration` | Database-backed tests (quote service, filings check, verification) with scripted providers |
+| `alerts:check [-- --no-fetch] [-- --fx]` | Evaluate every alert rule of every holding and watchlist item (within free-plan budgets) |
+| `fx:refresh` | Fetch the Bank of Israel USD/ILS representative rate (last 14 days) |
+| `test:integration` | Database-backed tests (quote service, filings check, verification, import, alerts, FX) with scripted providers |
 | `db:seed:fixtures` | Load fictional dev fixtures (requires `ENABLE_DEV_FIXTURES=true`) |
 
 ## Architecture
@@ -82,7 +89,8 @@ src/
       sec-edgar/            security master, XBRL companyfacts (annual + quarterly), submissions (new filings)
       fmp/                  latest quotes, statements for verification, EOD fallback
       tiingo/               end-of-day prices, dividends, splits, IEX quotes (US)
-      tase/                 Tel Aviv Stock Exchange placeholder (NOT_CONFIGURED)
+      tase/                 TASE: Data Hub Securities Basic (symbols); prices/fundamentals NOT_SUPPORTED (manual prices)
+      boi/                  Bank of Israel representative exchange rates (SDMX CSV)
       dev-fixture/          fictional fixtures, SEC-shaped
       registry.ts           provider selection per market; config status (no secrets)
     normalization/
@@ -94,7 +102,8 @@ src/
       graham.ts             Ch.11 formula, Graham number (derived), NCAV, margin of safety
       modern.ts             MODERN_EXTENSION: CPI-adjusted size, 4.4/Y formula, FCF, ROE…
     decision/               investment decision engine — stub (NOT_IMPLEMENTED)
-    portfolio/              position valuation (no price → no value, never cost)
+    portfolio/              holdings valuation per currency, FX (sourced rates only), ETF metrics, CSV import + validation
+    alerts/                 alert rules: edge-triggered evaluation, dedupe keys, monitoring status
     freshness/              freshness grading, quote status + cache policy (quote.ts), sufficiency gate (gate.ts)
     market/                 exchange calendars (NYSE holidays, early closes), session state, timezones
     verification/           cross-source comparison of statements and quotes
@@ -127,7 +136,7 @@ Key rules the code enforces:
 `Exchange`, `Security`, `PriceBar`, `CorporateAction`, `FinancialStatement`,
 `FinancialLineItem`, `DataSource`, `DataFetch`, `DataQualityIssue`,
 `AnalysisSnapshot`, `Portfolio`, `Position`, `PortfolioTransaction`, `Watchlist`,
-`WatchlistItem`, `Alert`, `AppSetting`.
+`WatchlistItem`, `Alert`, `AlertEvent`, `AlertRun`, `FxRate`, `ImportBatch`, `AppSetting`.
 
 ## Methodology notes
 
@@ -151,7 +160,10 @@ open items below.
 
 - Decision engine: application-defined research classifications (BUY CANDIDATE, HOLD, WAIT,
   REVIEW FOR SALE, AVOID, INSUFFICIENT VERIFIED DATA), not trading instructions. See docs/DECISION_ENGINE.md.
-- Not yet: alerts evaluation (model exists), TASE provider and calendar, IFRS (20-F) filers,
-  TTM statements, FX conversion, authentication (single-user app).
+- Portfolio, watchlist, alerts and analysis history: see docs/PORTFOLIO_ALERTS.md.
+- Not yet: TASE prices and IFRS fundamentals (no free source; manual prices instead), TASE
+  symbol validation via Data Hub in imports (adapter ready, needs a key), PDF statement
+  import (extension point only), IFRS (20-F) filers, TTM statements, authentication
+  (single-user app).
 - Live retrieval runs on a machine with network access (`npm run validate:free -- --db`);
   the cloud build environment blocks the provider hosts. See docs/DATA_PROVIDERS.md.

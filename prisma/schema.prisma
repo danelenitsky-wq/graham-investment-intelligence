@@ -352,8 +352,39 @@ model QuoteSnapshot {
   verificationStatus VerificationStatus @default(UNVERIFIED)
   verificationNote   String?
   payloadHash        String?
+  // Manual price updates (e.g. TASE without a free price feed): the value as
+  // typed, its unit (ILA = agorot), and the user's source label. `price` holds
+  // the normalized major-unit value (ILS).
+  isManual           Boolean            @default(false)
+  enteredPrice       Decimal?           @db.Decimal(20, 6)
+  enteredUnit        String?
+  sourceLabel        String?
 
   @@index([securityId, retrievedAt])
+}
+
+// ─────────────────────────────── FX rates ────────────────────────────────────
+
+enum FxRateKind {
+  OFFICIAL // published by a central bank (Bank of Israel representative rate)
+  MANUAL // typed in by the user, with a date and a source label
+}
+
+// One exchange rate observation: 1 `base` = `rate` `quote` on `rateDate`.
+model FxRate {
+  id          String     @id @default(cuid())
+  base        String // ISO 4217, e.g. USD
+  quote       String // ISO 4217, e.g. ILS
+  rate        Decimal    @db.Decimal(20, 8)
+  rateDate    DateTime   @db.Date
+  kind        FxRateKind
+  sourceKey   String // "boi" or "manual"
+  sourceLabel String
+  fetchId     String?
+  retrievedAt DateTime   @default(now())
+
+  @@unique([base, quote, rateDate, sourceKey])
+  @@index([base, quote, rateDate])
 }
 
 // ───────────────────────────── Verification ──────────────────────────────────
@@ -441,10 +472,35 @@ model Position {
   // Graham strategy recorded as the reason the position was bought (DEFENSIVE |
   // ENTERPRISING | NET_NET). The decision engine checks the thesis against it.
   thesisStrategy String?
+  /** Security type as declared by the user (ETF positions are not screened with company criteria). */
+  securityType AssetType?
+  /** Unit the average price was entered in (ILA = agorot); `averageCost` is always in major units. */
+  costInputUnit String?
+  importBatchId String?
+  importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@unique([portfolioId, securityId])
+}
+
+enum ImportKind {
+  CSV
+  PDF_STATEMENT // prepared for a future local (no paid service) statement extractor
+  MANUAL
+}
+
+// One confirmed import. Rows are validated and previewed before anything is saved.
+model ImportBatch {
+  id          String     @id @default(cuid())
+  kind        ImportKind
+  fileName    String?
+  contentHash String
+  rowCount    Int
+  summary     Json?
+  createdAt   DateTime   @default(now())
+  positions   Position[]
+  transactions PortfolioTransaction[]
 }
 
 enum TransactionType {
@@ -468,6 +524,8 @@ model PortfolioTransaction {
   fees        Decimal?        @db.Decimal(20, 6)
   currency    String
   notes       String?
+  importBatchId String?
+  importBatch   ImportBatch?  @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
   createdAt   DateTime        @default(now())
 
   @@index([portfolioId, tradeDate])
@@ -491,7 +549,13 @@ model WatchlistItem {
   securityId  String
   security    Security  @relation(fields: [securityId], references: [id], onDelete: Cascade)
   notes       String?
+  /** User's target purchase price, in `targetCurrency` (major units). */
+  targetPrice    Decimal? @db.Decimal(20, 6)
+  targetCurrency String?
+  /** Margin-of-safety target for this stock (fraction); null = the settings default. */
+  marginOfSafetyTarget Float?
   addedAt     DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
 
   @@unique([watchlistId, securityId])
 }
@@ -504,6 +568,15 @@ enum AlertType {
   MARGIN_OF_SAFETY_ABOVE
   GRAHAM_CRITERIA_CHANGED
   DATA_STALE
+  GRAHAM_PURCHASE_THRESHOLD
+  CUSTOM_TARGET_PRICE
+  MARGIN_OF_SAFETY_TARGET
+  NEW_FILING
+  CURRENT_RATIO_DETERIORATION
+  DEBT_INCREASE
+  EARNINGS_DETERIORATION
+  DIVIDEND_INTERRUPTION
+  NET_NET_CHANGE
 }
 
 enum AlertStatus {
@@ -523,10 +596,66 @@ model Alert {
   lastEvaluatedAt DateTime?
   lastTriggeredAt DateTime?
   note            String?
+  /** Evaluator state between runs (last condition, last seen filing…) for edge-triggered alerts. */
+  state           Json?
+  events          AlertEvent[]
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
+  @@unique([securityId, type])
   @@index([status])
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+// In-app alert history. `dedupeKey` is unique: the same occurrence is never recorded twice.
+model AlertEvent {
+  id             String        @id @default(cuid())
+  alertId        String?
+  alert          Alert?        @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  securityId     String?
+  type           AlertType
+  severity       AlertSeverity
+  dedupeKey      String        @unique
+  message        String // i18n code
+  params         Json
+  observedValue  Decimal?      @db.Decimal(30, 6)
+  threshold      Decimal?      @db.Decimal(30, 6)
+  runId          String?
+  run            AlertRun?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  triggeredAt    DateTime      @default(now())
+  acknowledgedAt DateTime?
+
+  @@index([triggeredAt])
+  @@index([securityId, triggeredAt])
+}
+
+enum AlertRunTrigger {
+  MANUAL // "Run checks now" in the app
+  SCHEDULED // /api/cron/check-alerts called by an external scheduler
+  SCRIPT // npm run alerts:check
+}
+
+// One alert-check run. The app reports background monitoring as active only
+// when a SCHEDULED run has actually completed recently.
+model AlertRun {
+  id            String          @id @default(cuid())
+  trigger       AlertRunTrigger
+  startedAt     DateTime        @default(now())
+  completedAt   DateTime?
+  checked       Int             @default(0)
+  newEvents     Int             @default(0)
+  duplicates    Int             @default(0)
+  providerCalls Int             @default(0)
+  skipped       Int             @default(0)
+  errors        Json?
+  events        AlertEvent[]
+
+  @@index([trigger, startedAt])
 }
 
 // ─────────────────────────────── Settings ────────────────────────────────────
