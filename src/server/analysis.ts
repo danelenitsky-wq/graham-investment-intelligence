@@ -1,8 +1,7 @@
 import "server-only";
 import { fundamentalsStatus, type DataStatus, type FundamentalsReason } from "@/lib/freshness/status";
-import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
-import { evaluateDecision, type DecisionResult, type DecisionSettings, type PositionContext, type Strategy } from "@/lib/decision";
+import { evaluateDecision, stableHash, type DecisionResult, type DecisionSettings, type PositionContext, type Strategy } from "@/lib/decision";
 import {
   fundamentalsFreshness,
   priceFreshness,
@@ -554,9 +553,8 @@ function providerHealth(fetches: { status: string; startedAt: Date; completedAt:
     });
 }
 
-function hash(v: unknown) {
-  return createHash("sha256").update(JSON.stringify(v)).digest("hex");
-}
+// Same canonical SHA-256 as decision snapshots: independent of key order.
+const hash = stableHash;
 
 /** Persist immutable snapshots of the current engine outputs, with their inputs. */
 export async function saveAnalysisSnapshots(securityId: string) {

@@ -11,6 +11,8 @@ export {
   buildDecisionSnapshot,
   compareSnapshots,
   stableHash,
+  canonicalJson,
+  HASH_ALGORITHM,
   SNAPSHOT_SCHEMA_VERSION,
   type DecisionSnapshot,
   type SnapshotComparison,
