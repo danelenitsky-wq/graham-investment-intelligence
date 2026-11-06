@@ -88,7 +88,7 @@ export function FairValueCard({ a, dict, locale, gated = false }: { a: SecurityA
         {priceWarning && priceWarning !== "noPrice" && (
           <p className="text-xs text-warning">{fmt(dict.valuationDashboard.price.warning[priceWarning], { days: a.valuationDashboard.price.ageDays ?? "" })}</p>
         )}
-        {(["modelsDisagree", "terminalHeavy", "assetBasedOnly"] as const)
+        {(["cashFlowBelowEarnings", "modelsDisagree", "terminalHeavy", "assetBasedOnly"] as const)
           .filter((k) => fv.flags[k])
           .map((k) => (
             <p key={k} className="text-xs text-warning">

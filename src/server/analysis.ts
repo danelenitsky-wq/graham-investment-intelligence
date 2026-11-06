@@ -339,6 +339,7 @@ export async function getSecurityAnalysis(
     price: valuationDashboard.price.comparable,
     currency: lastCurrency ?? null,
     historicalRevenueGrowth: intrinsicDefaults.historical.revenueCagr,
+    fcfWellBelowEarnings: intrinsicDefaults.fcfWellBelowEarnings,
   });
   const fundamentalsFixture = provenance.some((p) => p.isDevFixture);
   const freshness: FreshnessReport = {

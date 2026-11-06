@@ -13,8 +13,8 @@
  *
  * Every assumption is visible and user-configurable. Defaults are derived from
  * the company's own history and deliberately tilted conservative (growth is
- * capped, buybacks are not assumed to continue, the lower of the net-income
- * and free-cash-flow margins is used). When the inputs cannot support a value
+ * capped, buybacks are not assumed to continue, the normalized
+ * net-income margin is used, with free cash flow as a cross-check). When the inputs cannot support a value
  * the result is NOT_ESTABLISHED; nothing is filled in.
  *
  * Pure and dependency-free so the same code runs on the server and live in the
@@ -58,6 +58,9 @@ export const INTRINSIC_DEFAULTS = {
   minHistoryYears: 3,
 } as const;
 
+/** FCF margin below this fraction of the net-income margin is flagged as heavy investment. */
+export const FCF_GAP_FACTOR = 0.5;
+
 export const INTRINSIC_LIMITS = {
   revenueGrowth: [-0.3, 0.3],
   profitMargin: [-0.5, 0.6],
@@ -93,6 +96,8 @@ export interface AssumptionDefaults {
   sources: Record<"revenueGrowth" | "profitMargin" | "discountRate" | "terminalGrowth" | "normalizationYears" | "shareDilution" | "projectionYears", AssumptionSource>;
   /** Which margin the default came from. */
   marginBasis: "NET_INCOME" | "FREE_CASH_FLOW" | null;
+  /** Normalized FCF margin is below half the net-income margin (heavy investment years): flagged, not used. */
+  fcfWellBelowEarnings: boolean;
   historical: { revenueCagr: Num; netMargin: Num; fcfMargin: Num; shareCagr: Num; normalizedEps: Num; years: number[] };
 }
 
@@ -250,7 +255,8 @@ export function historicalFigures(base: IntrinsicBase, normalizationYears: numbe
 /**
  * Conservative defaults derived from the company's own history:
  *  - revenue growth: historical CAGR over the window, capped at 8% (never raised)
- *  - margin: the LOWER of the normalized net-income and free-cash-flow margins
+ *  - margin: the normalized net-income margin (FCF margin only when net income is missing;
+ *    an FCF margin far below it is flagged, not used)
  *  - dilution: historical share-count growth, floored at 0 (buybacks are not assumed to continue)
  *  - discount rate 10%, terminal growth 2%, 10 projection years: application defaults
  */
@@ -273,16 +279,20 @@ export function defaultAssumptions(base: IntrinsicBase, overrides: Partial<Pick<
     sources.revenueGrowth = h.revenueCagr > INTRINSIC_DEFAULTS.maxDefaultRevenueGrowth ? "HISTORICAL_CAPPED" : "HISTORICAL";
   }
 
+  // Margin: normalized NET-INCOME margin (Graham values a business on normalized earnings).
+  // Free cash flow is only the fallback when net income is unavailable: in years of heavy
+  // growth investment (e.g. data-centre capex) FCF can be a small fraction of earnings,
+  // which would value a profitable business at almost nothing. That gap is flagged instead.
   let profitMargin = 0;
   let marginBasis: AssumptionDefaults["marginBasis"] = null;
-  const candidates: [number, "NET_INCOME" | "FREE_CASH_FLOW"][] = [];
-  if (h.netMargin !== null) candidates.push([h.netMargin, "NET_INCOME"]);
-  if (h.fcfMargin !== null) candidates.push([h.fcfMargin, "FREE_CASH_FLOW"]);
-  if (candidates.length) {
-    candidates.sort((a, b) => a[0] - b[0]);
-    [profitMargin, marginBasis] = candidates[0];
+  if (h.netMargin !== null) {
+    [profitMargin, marginBasis] = [h.netMargin, "NET_INCOME"];
+    sources.profitMargin = "HISTORICAL";
+  } else if (h.fcfMargin !== null) {
+    [profitMargin, marginBasis] = [h.fcfMargin, "FREE_CASH_FLOW"];
     sources.profitMargin = "HISTORICAL";
   }
+  const fcfWellBelowEarnings = h.netMargin !== null && h.fcfMargin !== null && h.netMargin > 0 && h.fcfMargin < h.netMargin * FCF_GAP_FACTOR;
 
   let shareDilution = 0;
   if (h.shareCagr !== null) {
@@ -304,6 +314,7 @@ export function defaultAssumptions(base: IntrinsicBase, overrides: Partial<Pick<
     },
     sources,
     marginBasis,
+    fcfWellBelowEarnings,
     historical: { revenueCagr: h.revenueCagr, netMargin: h.netMargin, fcfMargin: h.fcfMargin, shareCagr: h.shareCagr, normalizedEps: h.normalizedEps, years: h.rows.map((r) => r.fiscalYear) },
   };
 }

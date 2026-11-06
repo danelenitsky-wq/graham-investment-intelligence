@@ -248,9 +248,10 @@ describe("intrinsic value (modern extension)", () => {
     const d = defaultAssumptions(base);
     expect(d.historical.revenueCagr).toBeCloseTo(0.05, 8);
     expect(d.sources.revenueGrowth).toBe("HISTORICAL");
-    // FCF margin 30M / revenue is below the net margin, so it is used.
-    expect(d.marginBasis).toBe("FREE_CASH_FLOW");
-    expect(d.assumptions.profitMargin).toBeLessThan(d.historical.netMargin!);
+    // The normalized net-income margin is used even though the FCF margin is lower.
+    expect(d.historical.fcfMargin!).toBeLessThan(d.historical.netMargin!);
+    expect(d.marginBasis).toBe("NET_INCOME");
+    expect(d.assumptions.profitMargin).toBeCloseTo(d.historical.netMargin!, 12);
     expect(d.assumptions.shareDilution).toBe(0);
   });
 
