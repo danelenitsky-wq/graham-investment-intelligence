@@ -58,12 +58,34 @@ export function historicalEpsGrowth(annual: AnnualFinancials[], years = 10): Num
 }
 
 /**
+ * Highest historical growth rate (percent) used as the DEFAULT G. Graham's own
+ * Chapter 11 table stops at 20%, and he warns that the formula overstates value
+ * for high-growth companies; extrapolating, say, 60% a year would turn a past
+ * boom into an intrinsic value. Above this, no default estimate is produced
+ * (NOT_MEANINGFUL); the user can still enter an explicit G.
+ */
+export const MAX_DEFAULT_GROWTH_PERCENT = 20;
+/** Accepted range for a user-entered G (percent), matching the input field. */
+export const GROWTH_OVERRIDE_RANGE = [-20, 50] as const;
+
+/**
  * Chapter 11 (1973): Value = Current (Normal) Earnings × (8.5 + 2G), where G is
  * the expected annual growth rate (in percent) over the next seven to ten years.
  */
-export function grahamGrowthFormula(params: { earnings: Num; growthPercent: Num }): ValueEstimate {
+export function grahamGrowthFormula(params: { earnings: Num; growthPercent: Num; rejectedHistoricalGrowth?: Num }): ValueEstimate {
   const { earnings, growthPercent } = params;
   const inputs = { earnings, growthPercent, baseMultiplier: 8.5, growthMultiplier: 2 };
+  if (params.rejectedHistoricalGrowth !== undefined && params.rejectedHistoricalGrowth !== null) {
+    return {
+      id: "graham.growthFormula",
+      methodology: "GRAHAM_1973",
+      status: "NOT_MEANINGFUL",
+      value: null,
+      inputs: { ...inputs, historicalGrowthPercent: params.rejectedHistoricalGrowth, maxDefaultGrowthPercent: MAX_DEFAULT_GROWTH_PERCENT },
+      reason: "growthAboveFormulaRange",
+      chapter: 11,
+    };
+  }
   if (earnings === null || growthPercent === null) {
     return { id: "graham.growthFormula", methodology: "GRAHAM_1973", status: "INSUFFICIENT_DATA", value: null, inputs, reason: "missingInputs", chapter: 11 };
   }
@@ -139,6 +161,8 @@ export interface GrahamValuation {
   historicalGrowth: Num;
   growthPercentUsed: Num;
   growthSource: "HISTORICAL" | "USER" | "NONE";
+  /** Historical growth (percent) that was too high to use as the default G; null otherwise. */
+  rejectedHistoricalGrowth: Num;
   estimates: ValueEstimate[];
   price: Num;
   marginsOfSafety: Record<string, Num>;
@@ -155,12 +179,16 @@ export function valueWithGraham(params: {
   const ne = normalEarnings(annual);
   const bvps = bookValuePerShare(last);
   const hist = historicalEpsGrowth(annual);
-  const override = params.growthPercentOverride;
-  const growthPercentUsed = override !== undefined && override !== null ? override : hist !== null ? hist * 100 : null;
-  const growthSource = override !== undefined && override !== null ? "USER" : hist !== null ? "HISTORICAL" : "NONE";
+  const raw = params.growthPercentOverride;
+  const override =
+    raw !== undefined && raw !== null && Number.isFinite(raw) && raw >= GROWTH_OVERRIDE_RANGE[0] && raw <= GROWTH_OVERRIDE_RANGE[1] ? raw : null;
+  const histPercent = hist !== null ? hist * 100 : null;
+  const rejectedHistoricalGrowth = override === null && histPercent !== null && histPercent > MAX_DEFAULT_GROWTH_PERCENT ? histPercent : null;
+  const growthPercentUsed = override !== null ? override : rejectedHistoricalGrowth === null ? histPercent : null;
+  const growthSource = override !== null ? "USER" : growthPercentUsed !== null ? "HISTORICAL" : "NONE";
 
   const estimates = [
-    grahamGrowthFormula({ earnings: ne, growthPercent: growthPercentUsed }),
+    grahamGrowthFormula({ earnings: ne, growthPercent: growthPercentUsed, rejectedHistoricalGrowth }),
     grahamNumber({ earnings: ne, bookValuePerShare: bvps }),
     netNetValue(last),
   ];
@@ -176,6 +204,7 @@ export function valueWithGraham(params: {
     historicalGrowth: hist,
     growthPercentUsed,
     growthSource,
+    rejectedHistoricalGrowth,
     estimates,
     price,
     marginsOfSafety,

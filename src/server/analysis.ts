@@ -298,7 +298,7 @@ export async function getSecurityAnalysis(
   const valuation = valueWithGraham({ annual, price: comparablePrice, growthPercentOverride: options.growthPercentOverride });
   const aaa = settings.aaaBondYield?.value ?? null;
   const modern = {
-    bondYieldAdjusted: bondYieldAdjustedFormula({ earnings: valuation.normalEarnings, growthPercent: valuation.growthPercentUsed, aaaYieldPercent: aaa }),
+    bondYieldAdjusted: bondYieldAdjustedFormula({ earnings: valuation.normalEarnings, growthPercent: valuation.growthPercentUsed, aaaYieldPercent: aaa, rejectedHistoricalGrowth: valuation.rejectedHistoricalGrowth }),
     metrics: modernMetrics({ annual, price: comparablePrice, normalEarnings: valuation.normalEarnings, aaaYieldPercent: aaa }),
   };
 

@@ -206,6 +206,7 @@ export const en = {
     comparedInflationAdjusted: "Compared with the CPI-scaled threshold.",
     missingInputs: "Required inputs are missing.",
     nonPositiveInputs: "Inputs are zero or negative.",
+    growthAboveFormulaRange: "Historical EPS growth is above 20% a year, beyond the range of Graham's formula. No default estimate is shown; enter a growth rate you consider sustainable to compute one.",
     negativeMultiplier: "The growth assumption produces a negative multiplier.",
     computed: "Computed from stored data.",
     negativeNcav: "Net current asset value is negative.",

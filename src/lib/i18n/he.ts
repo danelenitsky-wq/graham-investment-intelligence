@@ -207,6 +207,7 @@ export const he: Dictionary = {
     comparedInflationAdjusted: "הושווה לסף המותאם למדד.",
     missingInputs: "חסרים נתוני קלט נדרשים.",
     nonPositiveInputs: "נתוני הקלט אפסיים או שליליים.",
+    growthAboveFormulaRange: "צמיחת הרווח למניה בעבר גבוהה מ-20% בשנה, מחוץ לטווח של נוסחת גרהם. לא מוצג אומדן ברירת מחדל; הזינו שיעור צמיחה שנראה לכם בר-קיימא כדי לחשב.",
     negativeMultiplier: "הנחת הצמיחה יוצרת מכפיל שלילי.",
     computed: "חושב מהנתונים השמורים.",
     negativeNcav: "ערך הנכסים השוטפים נטו שלילי.",

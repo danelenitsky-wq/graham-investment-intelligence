@@ -1,4 +1,5 @@
 import "server-only";
+import { screenDistributions } from "@/lib/graham/dividends";
 import { fundamentalsFreshness } from "@/lib/freshness";
 import { fundamentalsStatus, metricStatus, type DataStatus } from "@/lib/freshness/status";
 import { CONCEPTS, type CanonicalConcept } from "@/lib/normalization/concepts";
@@ -34,6 +35,8 @@ export interface MetricRecord {
   retrievedAt: string | null;
   verificationStatus: string;
   status: DataStatus;
+  /** Set when the figure is excluded from calculations, e.g. a provider "dividend" that is really a share distribution. */
+  note?: "EXCLUDED_NON_CASH_DISTRIBUTION";
 }
 
 export interface Coverage {
@@ -144,6 +147,17 @@ export async function getMetricProvenance(securityId: string, options: { fetchQu
   }
 
   const dividends = actions.filter((a) => a.type === "CASH_DIVIDEND");
+  // Same screen as the Graham dividend rules (e.g. GOOGL 2014-04-02: Tiingo reports the Class C
+  // share distribution as a $567.97 cash dividend). Closes are only needed around large amounts.
+  const excludedDates = new Set<string>();
+  if (dividends.length) {
+    const closes = (await db.priceBar.findMany({ where: { securityId }, select: { date: true, close: true }, orderBy: { date: "asc" } })).map((b) => ({ date: iso(b.date)!, close: Number(b.close) }));
+    const screened = screenDistributions(
+      dividends.filter((d) => d.amount !== null).map((d) => ({ exDate: iso(d.exDate)!, amount: Number(d.amount) })),
+      closes,
+    );
+    for (const e of screened.excluded) excludedDates.add(e.exDate);
+  }
   for (const d of dividends) {
     records.push({
       metric: "dividendPerShare",
@@ -164,6 +178,7 @@ export async function getMetricProvenance(securityId: string, options: { fetchQu
       retrievedAt: (d.fetch?.completedAt ?? d.createdAt).toISOString(),
       verificationStatus: d.verificationStatus,
       status: d.source.isDevFixture ? "UNAVAILABLE" : "LAST_CLOSE",
+      ...(excludedDates.has(iso(d.exDate)!) ? { note: "EXCLUDED_NON_CASH_DISTRIBUTION" as const } : {}),
     });
   }
 
@@ -174,7 +189,7 @@ export async function getMetricProvenance(securityId: string, options: { fetchQu
     byYear.set(st.fiscalYear, set);
   }
   const years = [...byYear.keys()].sort((a, b) => a - b);
-  const divYears = new Set(dividends.map((d) => d.exDate.getUTCFullYear()));
+  const divYears = new Set(dividends.filter((d) => !excludedDates.has(iso(d.exDate)!)).map((d) => d.exDate.getUTCFullYear()));
   const coverage: Coverage = {
     annualYears: { count: years.length, first: years[0] ?? null, last: years.at(-1) ?? null },
     quarterlyPeriods: { count: new Set(quarterly.map((q) => iso(q.periodEnd))).size, first: iso(quarterly[0]?.periodEnd), last: iso(quarterly.at(-1)?.periodEnd) },

@@ -16,7 +16,8 @@ with modern extensions kept clearly separate and always labelled.
   See [docs/DATA_PROVIDERS.md](docs/DATA_PROVIDERS.md) for the provider evaluation and setup.
 - **No fabricated data.** Missing values are shown as missing. Fictional data only
   exists as explicitly labelled development fixtures.
-- **No recommendations.** The decision engine is a deliberate stub.
+- **No recommendations.** The decision engine assigns research classifications (BUY CANDIDATE, HOLD, WAIT, REVIEW FOR SALE, AVOID, INSUFFICIENT VERIFIED DATA), never trading instructions.
+- **No backtesting.** There is no point-in-time fundamentals dataset, so historical backtests are disabled on purpose (see docs/DEPLOYMENT.md, Known limitations).
 
 ## Stack
 
@@ -93,7 +94,8 @@ src/
     valuation/
       graham.ts             Ch.11 formula, Graham number (derived), NCAV, margin of safety
       modern.ts             MODERN_EXTENSION: CPI-adjusted size, 4.4/Y formula, FCF, ROE…
-    decision/               investment decision engine — stub (NOT_IMPLEMENTED)
+    decision/               explainable decision engine (research classifications) — see docs/DECISION_ENGINE.md
+    security/               access control (HTTP Basic when APP_PASSWORD is set)
     portfolio/              position valuation (no price → no value, never cost)
     freshness/              freshness grading, quote status + cache policy (quote.ts), sufficiency gate (gate.ts)
     market/                 exchange calendars (NYSE holidays, early closes), session state, timezones
@@ -152,6 +154,7 @@ open items below.
 - Decision engine: application-defined research classifications (BUY CANDIDATE, HOLD, WAIT,
   REVIEW FOR SALE, AVOID, INSUFFICIENT VERIFIED DATA), not trading instructions. See docs/DECISION_ENGINE.md.
 - Not yet: alerts evaluation (model exists), TASE provider and calendar, IFRS (20-F) filers,
-  TTM statements, FX conversion, authentication (single-user app).
+  TTM statements, FX conversion, user accounts (single-user app; protect it with APP_PASSWORD).
+- Deployment, monitoring, backups and free-plan usage: docs/DEPLOYMENT.md. Audit: docs/AUDIT_2026-11-06.md.
 - Live retrieval runs on a machine with network access (`npm run validate:free -- --db`);
   the cloud build environment blocks the provider hosts. See docs/DATA_PROVIDERS.md.
