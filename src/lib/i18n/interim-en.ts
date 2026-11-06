@@ -26,7 +26,7 @@ export const interimEn = {
     ANNUAL_PLUS_YTD: "Annual + YTD − prior YTD",
     FOUR_QUARTERS: "Sum of 4 quarters",
     ANNUAL: "Annual",
-    none: "Not computable (missing quarters)",
+    none: "Not computable: a quarterly figure is missing (10-Q cash flow is usually reported year-to-date only)",
   },
   approximate: "approx.: sum of quarterly per-share figures",
   metrics: {

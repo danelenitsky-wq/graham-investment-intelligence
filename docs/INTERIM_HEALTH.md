@@ -37,3 +37,12 @@ remain based on the annual report.
 
 Percent changes are not computed from a non-positive annual base. Statements
 in different currencies are not compared.
+
+## Known limitation
+
+10-Q filings usually report cash flow only year-to-date (3, 6, 9 months). The
+quarterly normalization stores discrete three-month figures only, so TTM
+operating cash flow is empty whenever the latest quarter is not a first
+quarter (seen in the real-data run for 6 of 7 companies). Supporting it needs
+year-to-date facts stored alongside the quarters; until then the table shows
+"not computable" and no cash-flow flag is raised.
