@@ -1,6 +1,7 @@
 import "server-only";
 import { fundamentalsStatus, type DataStatus, type FundamentalsReason } from "@/lib/freshness/status";
 import type { Prisma } from "@/generated/prisma/client";
+import { computeInterimHealth, type InterimHealth } from "@/lib/interim";
 import { evaluateDecision, stableHash, type DecisionResult, type DecisionSettings, type PositionContext, type Strategy } from "@/lib/decision";
 import {
   fundamentalsFreshness,
@@ -126,6 +127,8 @@ export interface SecurityAnalysis {
   quote: QuoteView;
   health: DataHealth;
   quarterly: QuarterRow[];
+  /** Latest-quarter and TTM health since the latest annual report. Separate from (and never feeding) the Graham rules. */
+  interim: InterimHealth;
   priceHistory: { date: string; close: number }[];
   /** Provider of the stored daily price history. */
   priceHistorySource: string | null;
@@ -464,6 +467,7 @@ export async function getSecurityAnalysis(
     quote,
     health,
     quarterly: quarterly.slice(0, 12),
+    interim: computeInterimHealth(annual, quarterly),
     priceHistory,
     priceHistorySource: priceSourceName ?? null,
     dividends: dividendRows

@@ -80,7 +80,7 @@ describe("stableHash (SHA-256 over canonical JSON)", () => {
   });
 
   it("does not confuse values that JSON.stringify would collapse together", () => {
-    const distinct = [null, 0, -1, "0", "", false, [], {}, [null], NaN, Infinity, -Infinity, "NaN", new Date("2025-01-01T00:00:00Z"), "2025-01-01T00:00:00.000Z", 1n, "1"];
+    const distinct = [null, 0, -1, "0", "", false, [], {}, [null], NaN, Infinity, -Infinity, "NaN", new Date("2025-01-01T00:00:00Z"), "2025-01-01T00:00:00.000Z", BigInt(1), "1"];
     const hashes = distinct.map((v) => stableHash({ v }));
     expect(new Set(hashes).size).toBe(distinct.length);
     // Previously two different Dates both serialized as {} and hashed the same.
