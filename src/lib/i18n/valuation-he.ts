@@ -109,7 +109,7 @@ export const valuationHe: ValuationDictionary = {
     projectionYears: "שנות תחזית",
     sources: {
       HISTORICAL: "היסטורי",
-      HISTORICAL_CAPPED: "היסטורי, מוגבל ל־8%",
+      HISTORICAL_CAPPED: "היסטורי, מוגבל ל־30%",
       APP_DEFAULT: "ברירת מחדל של המערכת",
       USER: "ההגדרה שלכם",
       UNAVAILABLE: "אין היסטוריה",

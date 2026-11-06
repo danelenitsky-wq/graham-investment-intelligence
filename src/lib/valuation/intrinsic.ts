@@ -53,8 +53,11 @@ export const INTRINSIC_DEFAULTS = {
   terminalGrowth: 0.02,
   normalizationYears: 5,
   projectionYears: 10,
-  /** Historical revenue growth above this is not extrapolated by default. */
-  maxDefaultRevenueGrowth: 0.08,
+  /**
+   * Default revenue growth = the company's own revenue CAGR over the normalization
+   * window (5 years by default). Above this it is capped (the input's upper limit).
+   */
+  maxDefaultRevenueGrowth: 0.3,
   minHistoryYears: 3,
 } as const;
 
@@ -254,7 +257,7 @@ export function historicalFigures(base: IntrinsicBase, normalizationYears: numbe
 
 /**
  * Conservative defaults derived from the company's own history:
- *  - revenue growth: historical CAGR over the window, capped at 8% (never raised)
+ *  - revenue growth: historical revenue CAGR over the window (5 years by default), capped at 30%
  *  - margin: the normalized net-income margin (FCF margin only when net income is missing;
  *    an FCF margin far below it is flagged, not used)
  *  - dilution: historical share-count growth, floored at 0 (buybacks are not assumed to continue)

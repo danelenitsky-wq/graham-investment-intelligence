@@ -68,12 +68,10 @@ describe("bottom-line fair value", () => {
     expect(role("netNetThreshold")).toBe("NOT_A_VALUE");
     expect(role("grahamNumber")).toBe("NOT_A_VALUE");
     expect(role("ncav")).toBe("FALLBACK_ONLY");
-    // Estimate is far above the $2.09 threshold and below the price.
+    // Estimate is far above the $2.09 threshold.
     expect(fv.base!).toBeGreaterThan(20);
-    expect(fv.base!).toBeLessThan(181);
     expect(fv.low!).toBeLessThanOrEqual(fv.base!);
     expect(fv.high!).toBeGreaterThanOrEqual(fv.base!);
-    expect(fv.verdict).toBe("ABOVE_ESTIMATE");
     expect(fv.gap!).toBeCloseTo((fv.base! - 181) / 181, 10);
     expect(fv.scenarios.total).toBeGreaterThan(0);
     expect(fv.scenarios.above).toBeLessThanOrEqual(fv.scenarios.total);
@@ -83,13 +81,21 @@ describe("bottom-line fair value", () => {
     const input = inputFor(fastGrower(), 181);
     const fv = buildFairValue(input);
     const ig = fv.impliedGrowth;
-    expect(ig.assumed).toBeCloseTo(0.08, 10); // capped default
+    // Default growth = 5-year revenue CAGR (far above 30% here), capped at 30%.
+    expect(ig.assumed).toBeCloseTo(0.3, 10);
     expect(ig.value).not.toBeNull();
-    expect(ig.value!).toBeGreaterThan(0.08);
     // Plugging the implied growth back into the DCF reproduces the price.
     const iv = input.intrinsic;
     const v = dcfValue(iv.inputs.baseRevenue!, iv.inputs.baseShares!, { ...iv.assumptions, revenueGrowth: ig.value! }).value!;
     expect(v).toBeCloseTo(181, 4);
+  });
+
+  it("defaults DCF growth to the company's own 5-year revenue CAGR", () => {
+    const annual = healthyCompany(2024, 12, (fy) => ({ revenue: 1_000_000_000 * Math.pow(1.12, fy - 2013) }));
+    const d = defaultAssumptions(buildIntrinsicBase(annual, "INDUSTRIAL"));
+    expect(d.assumptions.normalizationYears).toBe(5);
+    expect(d.assumptions.revenueGrowth).toBeCloseTo(0.12, 10);
+    expect(d.sources.revenueGrowth).toBe("HISTORICAL");
   });
 
   it("blends the DCF and the growth formula with equal weight for a steady company", () => {

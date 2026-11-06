@@ -105,7 +105,7 @@ export function FairValueCard({ a, dict, locale, gated = false }: { a: SecurityA
           </ul>
           {iv.status === "ESTABLISHED" && (
             <p className="mt-2 text-xs text-muted-foreground">
-              {fmtLtr(t.assumptions, { r: formatPercent(locale, iv.assumptions.discountRate, 0), g: formatPercent(locale, iv.assumptions.revenueGrowth, 1) })}
+              {fmtLtr(t.assumptions, { r: formatPercent(locale, iv.assumptions.discountRate, 0), g: formatPercent(locale, iv.assumptions.revenueGrowth, 1), years: iv.assumptions.projectionYears, window: iv.assumptions.normalizationYears, terminal: formatPercent(locale, iv.assumptions.terminalGrowth, 1) })}
             </p>
           )}
         </details>

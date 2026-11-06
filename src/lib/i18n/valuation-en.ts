@@ -107,7 +107,7 @@ export const valuationEn = {
     projectionYears: "Projection years",
     sources: {
       HISTORICAL: "historical",
-      HISTORICAL_CAPPED: "historical, capped at 8%",
+      HISTORICAL_CAPPED: "historical, capped at 30%",
       APP_DEFAULT: "app default",
       USER: "your setting",
       UNAVAILABLE: "no history",
