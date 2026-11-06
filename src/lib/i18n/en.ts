@@ -221,7 +221,7 @@ export const en = {
     bookValueCommonEquity: "Book value = stockholders' equity less preferred stock.",
     enterprisingLookback: "Graham compared 1971 with 1966 (five years); the lookback is configurable in Settings.",
     normalEarnings3y: "“Normal” earnings = average diluted EPS of the last three fiscal years.",
-    growthAssumption: "G is an assumption. The default is historical per-share growth; override it below.",
+    growthAssumption: "G is an assumption. The default is historical per-share growth, used only up to 20% a year (above that no default is computed); override it below.",
     cpiUserSupplied: "CPI level entered by you in Settings; base CPI-U 1972 = 41.8.",
     bondYieldUserSupplied: "AAA yield entered by you in Settings.",
   },
