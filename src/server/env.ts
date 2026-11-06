@@ -16,6 +16,8 @@ const schema = z.object({
   FMP_API_KEY: z.string().min(1).optional(),
   /** Shared secret for the daily filings check endpoint (/api/cron/check-filings). */
   CRON_SECRET: z.string().min(16).optional(),
+  /** Free TASE Data Hub key (Securities Basic: symbol ↔ security number ↔ ISIN). Optional. */
+  TASE_DATAHUB_API_KEY: z.string().min(1).optional(),
   ENABLE_DEV_FIXTURES: z
     .enum(["true", "false"])
     .optional()
@@ -36,6 +38,7 @@ export function env(): ServerEnv {
     TWELVE_DATA_API_KEY: process.env.TWELVE_DATA_API_KEY || undefined,
     FMP_API_KEY: process.env.FMP_API_KEY || undefined,
     CRON_SECRET: process.env.CRON_SECRET || undefined,
+    TASE_DATAHUB_API_KEY: process.env.TASE_DATAHUB_API_KEY || undefined,
     ENABLE_DEV_FIXTURES: process.env.ENABLE_DEV_FIXTURES || undefined,
   });
   if (!parsed.success) {

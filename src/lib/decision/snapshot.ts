@@ -230,8 +230,37 @@ export interface SnapshotComparison {
   factorChanges: { id: FactorId; from: FactorStatus; to: FactorStatus }[];
   ruleChanges: { id: string; from: RuleStatus | null; to: RuleStatus | null }[];
   metricChanges: { key: keyof SnapshotMetrics; from: number | null; to: number | null }[];
+  /** Per fiscal year: statement inputs that were added, revised or dropped between the snapshots. */
+  statementChanges: StatementChange[];
   addedTriggers: string[];
   removedTriggers: string[];
+}
+
+export interface StatementChange {
+  fiscalYear: number;
+  kind: "NEW" | "REVISED" | "REMOVED";
+  concepts: { concept: string; from: number | null; to: number | null }[];
+}
+
+/** Compare the annual statement inputs of two snapshots, year by year and concept by concept. */
+export function compareStatements(a: AnnualFinancials[], b: AnnualFinancials[]): StatementChange[] {
+  const ya = new Map(a.map((y) => [y.fiscalYear, y]));
+  const yb = new Map(b.map((y) => [y.fiscalYear, y]));
+  const years = [...new Set([...ya.keys(), ...yb.keys()])].sort((x, y) => y - x);
+  const out: StatementChange[] = [];
+  for (const fy of years) {
+    const x = ya.get(fy);
+    const y = yb.get(fy);
+    const vx = (x?.values ?? {}) as Record<string, number | undefined>;
+    const vy = (y?.values ?? {}) as Record<string, number | undefined>;
+    const keys = [...new Set([...Object.keys(vx), ...Object.keys(vy)])].sort();
+    const concepts = keys
+      .filter((k) => !near(vx[k] ?? null, vy[k] ?? null))
+      .map((k) => ({ concept: k, from: vx[k] ?? null, to: vy[k] ?? null }));
+    if (concepts.length === 0) continue;
+    out.push({ fiscalYear: fy, kind: !x ? "NEW" : !y ? "REMOVED" : "REVISED", concepts });
+  }
+  return out;
 }
 
 const near = (a: number | null, b: number | null) => (a === null || b === null ? a === b : Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b)));
@@ -281,6 +310,7 @@ export function compareSnapshots(a: DecisionSnapshot, b: DecisionSnapshot): Snap
     factorChanges,
     ruleChanges,
     metricChanges,
+    statementChanges: compareStatements(a.inputs.annual ?? [], b.inputs.annual ?? []),
     addedTriggers: [...tb].filter((x) => !ta.has(x)),
     removedTriggers: [...ta].filter((x) => !tb.has(x)),
   };

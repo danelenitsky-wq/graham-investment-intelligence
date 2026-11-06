@@ -128,6 +128,20 @@ export function LiveQuote({ initial }: { initial: QuoteView }) {
           {view.feed && ` · ${dict.market.feeds[view.feed]}`}
           {view.feedNote && ` · ${lookup(dict.market.feedNotes as Record<string, string>, view.feedNote)}`}
         </dd>
+        {view.manual && (
+          <>
+            <dt>{dict.holdings.manualPrice.source}</dt>
+            <dd data-testid="manual-price-source">
+              {dict.holdings.portfolio.manualPrice} · {view.manual.sourceLabel}
+              {view.manual.enteredPrice !== null && view.manual.enteredUnit && (
+                <>
+                  {" · "}
+                  <Num>{fmt(dict.holdings.manualPrice.entered, { price: String(view.manual.enteredPrice), unit: view.manual.enteredUnit })}</Num>
+                </>
+              )}
+            </dd>
+          </>
+        )}
         <dt>{dict.market.marketCap}</dt>
         <dd>
           <Num>{formatCompact(locale, view.marketCap, view.currency)}</Num>

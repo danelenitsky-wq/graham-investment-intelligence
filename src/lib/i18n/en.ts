@@ -1,4 +1,5 @@
 import { decisionEn } from "./decision-en";
+import { holdingsEn } from "./holdings-en";
 import { valuationEn } from "./valuation-en";
 import { interimEn } from "./interim-en";
 import { grahamEn } from "./graham-en";
@@ -18,6 +19,8 @@ export const en = {
     financials: "Financial History",
     portfolio: "Portfolio",
     watchlist: "Watchlist",
+    alerts: "Alerts",
+    history: "Analysis History",
     dataHealth: "Data Health",
     settings: "Settings",
     sections: { research: "Research", holdings: "Holdings", system: "System" },
@@ -536,6 +539,7 @@ export const en = {
   valuationDashboard: valuationEn,
   decision: decisionEn,
   interim: interimEn,
+  holdings: holdingsEn,
 };
 
 type Widen<T> = T extends string ? string : T extends readonly (infer U)[] ? readonly Widen<U>[] : { [K in keyof T]: Widen<T[K]> };

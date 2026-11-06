@@ -70,7 +70,9 @@ export type QuoteReason =
   | "CALENDAR_UNKNOWN"
   | "PROVIDER_FAILED_USING_CACHE"
   | "CACHE_TOO_OLD"
-  | "CROSS_CHECK_CONFLICT";
+  | "CROSS_CHECK_CONFLICT"
+  | "MANUAL_ENTRY"
+  | "MANUAL_TOO_OLD";
 
 export interface QuoteClassification {
   status: QuoteStatus;
@@ -162,6 +164,21 @@ function classifyQuoteTime({ quote, session, now, lastFetchFailed, thresholds = 
     return { status: "STALE", baseStatus: base, reasons: [...reasons, "CACHE_TOO_OLD"], ageSeconds };
   }
   return { status: base, baseStatus: base, reasons, ageSeconds };
+}
+
+/**
+ * A price the user typed in (e.g. a TASE close read from the exchange's site).
+ * It is never LIVE or an official LAST_CLOSE: within `staleAfterDays` it is
+ * reported as DELAYED with reason MANUAL_ENTRY, after that as STALE.
+ */
+export function classifyManualQuote(input: { sourceTimestamp: string; now: Date; staleAfterDays: number; maxClockSkewSeconds?: number }): QuoteClassification {
+  const ts = Date.parse(input.sourceTimestamp);
+  const ageSeconds = Math.round((input.now.getTime() - ts) / 1000);
+  if (!Number.isFinite(ts) || ageSeconds < -(input.maxClockSkewSeconds ?? DEFAULT_QUOTE_THRESHOLDS.maxClockSkewSeconds)) {
+    return { status: "STALE", baseStatus: "STALE", reasons: ["MANUAL_ENTRY", "FUTURE_TIMESTAMP"], ageSeconds };
+  }
+  if (ageSeconds / 86_400 > input.staleAfterDays) return { status: "STALE", baseStatus: "STALE", reasons: ["MANUAL_ENTRY", "MANUAL_TOO_OLD"], ageSeconds };
+  return { status: "DELAYED", baseStatus: "DELAYED", reasons: ["MANUAL_ENTRY"], ageSeconds: Math.max(0, ageSeconds) };
 }
 
 /** Statuses good enough to feed downstream analysis. */

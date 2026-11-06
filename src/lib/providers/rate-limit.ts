@@ -62,4 +62,8 @@ export const FREE_PLAN_BUDGETS: Record<string, RateBudget> = {
   tiingo: { perHour: 48, perDay: 950 },
   fmp: { perDay: 240 },
   "sec-edgar": { perSecond: 8 },
+  // Bank of Israel publishes one rate a day; a few requests an hour is plenty and polite.
+  boi: { perMinute: 10, perDay: 200 },
+  // TASE Data Hub: documented 10 requests per 2 seconds for every product.
+  "tase-datahub": { perSecond: 4 },
 };

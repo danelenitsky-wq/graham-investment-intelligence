@@ -11,7 +11,8 @@ import { FMP } from "@/lib/providers/fmp";
 import { TIINGO } from "@/lib/providers/tiingo";
 import { FINNHUB } from "@/lib/providers/finnhub";
 import { TWELVE_DATA } from "@/lib/providers/twelve-data";
-import { TASE } from "@/lib/providers/tase";
+import { TASE, TASE_DATAHUB } from "@/lib/providers/tase";
+import { BOI } from "@/lib/providers/boi";
 import { fundamentalsProviderFor, priceProviderFor, referenceProvider } from "@/lib/providers/registry";
 import { ProviderError, type FetchMeta, type MarketCode, type ProviderDescriptor } from "@/lib/providers/types";
 import type { NormalizedDividend, NormalizedPriceBar, NormalizedSplit } from "@/lib/normalization/market";
@@ -36,7 +37,7 @@ export async function ensureReferenceData() {
   for (const e of EXCHANGES) {
     await db.exchange.upsert({ where: { code: e.code }, create: { ...e }, update: { name: e.name, nameHe: e.nameHe } });
   }
-  for (const d of [SEC_EDGAR, TIINGO, FINNHUB, TWELVE_DATA, FMP, TASE]) await ensureSource(d);
+  for (const d of [SEC_EDGAR, TIINGO, FINNHUB, TWELVE_DATA, FMP, BOI, TASE_DATAHUB, TASE]) await ensureSource(d);
 }
 
 const KIND: Record<string, "REFERENCE" | "FUNDAMENTALS" | "PRICES"> = {
